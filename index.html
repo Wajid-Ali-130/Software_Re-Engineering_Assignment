@@ -1,0 +1,1534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>University of Sindh – LMS (Re-engineered Prototype)</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: { uos: '#337ab7', navy: '#1f4e7f' } } } };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+  :root { --uos:#337ab7; --navy:#1f4e7f; --pagebg:#f6f7fb; }
+  html, body { margin:0; font-family:Roboto, Arial, sans-serif; font-size:14px; background:var(--pagebg); color:#222; }
+  * { box-sizing:border-box; }
+  button { font-family:inherit; cursor:pointer; }
+  .tbl { width:100%; border-collapse:collapse; font-size:13px; }
+  .tbl th { text-align:left; font-weight:700; padding:10px 8px; border-bottom:2px solid #ddd; white-space:nowrap; }
+  .tbl td { padding:10px 8px; border-bottom:1px solid #ddd; vertical-align:middle; }
+  .inp { border:1px solid #ddd; padding:8px 10px; border-radius:3px; width:100%; font-size:14px; background:#fff; font-family:inherit; }
+  .inp:focus { outline:none; border-color:var(--uos); box-shadow:0 0 0 2px rgba(51,122,183,.15); }
+  .num { width:64px; text-align:center; padding:6px 4px; border:1px solid #ccc; border-radius:3px; font-size:13px; }
+  .num:focus { outline:none; border-color:var(--uos); }
+  .lbl { display:block; font-weight:700; font-size:13px; margin:12px 0 4px; }
+  .btn { padding:8px 16px; border-radius:4px; color:#fff; font-size:14px; font-weight:500; border:0; background:#0b6bf0; }
+  .btn:hover { opacity:.9; } .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .btn-gray { background:#6c757d; } .btn-red { background:#dc3545; } .btn-green { background:#28a745; }
+  .badge-pass { background:#4caf50; color:#fff; font-size:9px; font-weight:700; padding:2px 5px; border-radius:2px; }
+  .badge-proc { background:#f0ad4e; color:#fff; font-size:9px; font-weight:700; padding:2px 5px; border-radius:2px; }
+  .wa-wall { background-color:#efeae2; background-image:radial-gradient(#d8d1c4 1px, transparent 1px); background-size:22px 22px; }
+  .scroll-thin::-webkit-scrollbar { width:6px; } .scroll-thin::-webkit-scrollbar-thumb { background:#c1c9cf; border-radius:3px; }
+  .serif-logo { font-family:'Times New Roman', serif; font-weight:700; letter-spacing:-0.5px; transform:scaleX(.82); transform-origin:left; display:inline-block; }
+  @media print { aside, header, footer, .no-print { display:none !important; } main { margin:0 !important; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/* ================================================================
+   HELPERS
+================================================================ */
+const pad = n => String(n).padStart(2, '0');
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const isoDate = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const fmtLong = d => { d = new Date(d); return `${pad(d.getDate())} ${MON[d.getMonth()]} ${d.getFullYear()}`; };
+const dmy = iso => { const [y, m, d] = iso.split('-'); return `${d}-${m}-${y}`; };
+const addDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return isoDate(d); };
+const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+const uid = () => Math.random().toString(36).slice(2, 9);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const timeAgo = ts => { const s = (Date.now() - ts) / 1000; if (s < 60) return 'Just now'; if (s < 3600) return Math.floor(s / 60) + 'm ago'; if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return fmtLong(ts); };
+const clockTime = ts => new Date(ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const dayLabel = ts => { const d = isoDate(new Date(ts)); if (d === isoDate()) return 'TODAY'; if (d === addDays(-1)) return 'YESTERDAY'; return fmtLong(ts).toUpperCase(); };
+const listTime = ts => { const d = isoDate(new Date(ts)); if (d === isoDate()) return clockTime(ts); if (d === addDays(-1)) return 'Yesterday'; return dmy(d); };
+const hh = n => Math.floor((Math.abs(Math.sin(n * 12.9898 + 78.233) * 43758.5453) % 1) * 1000);
+const initials = n => n.replace(/^(Dr\.|Prof\.|Sir|Ms\.)\s*/i, '').split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const AV_COLORS = ['#25a18e', '#7a5af8', '#e5484d', '#d9822b', '#3b82f6', '#a855f7', '#0ea5a4', '#c2410c'];
+const avColor = s => AV_COLORS[hh(s.length * 31 + s.charCodeAt(0) + s.charCodeAt(s.length - 1)) % AV_COLORS.length];
+
+function downloadBlob(name, content, type = 'text/plain') {
+  const b = new Blob([content], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+function downloadUpload(u) {
+  if (u.data) { const a = document.createElement('a'); a.href = u.data; a.download = u.fileName; document.body.appendChild(a); a.click(); a.remove(); }
+  else downloadBlob((u.fileName || u.title) + (u.fileName && u.fileName.includes('.') ? '' : '.txt'), `${u.title}\n${cName(u.course)}\n\n${u.desc || ''}`);
+}
+
+/* localStorage / sessionStorage backed state */
+function useStore(key, init, area = 'local') {
+  const k = 'uos_lms_' + key;
+  const st = () => { try { return area === 'session' ? window.sessionStorage : window.localStorage; } catch (e) { return null; } };
+  const fresh = () => (typeof init === 'function' ? init() : init);
+  const read = () => {
+    try {
+      const raw = st() && st().getItem(k);
+      if (raw != null) return JSON.parse(raw);
+    } catch (e) {}
+    const nv = fresh();
+    try { st() && st().setItem(k, JSON.stringify(nv)); } catch (e) {}
+    return nv;
+  };
+  const [v, setV] = useState(read);
+  const set = useCallback(u => {
+    setV(prev => {
+      const nv = typeof u === 'function' ? u(prev) : u;
+      try { st() && st().setItem(k, JSON.stringify(nv)); } catch (e) {}
+      return nv;
+    });
+  }, [k]);
+  useEffect(() => {
+    if (area !== 'local') return;
+    const h = e => { if (e.key === k && e.newValue != null) { try { setV(JSON.parse(e.newValue)); } catch (_) {} } };
+    window.addEventListener('storage', h);
+    return () => window.removeEventListener('storage', h);
+  }, [k]);
+  return [v, set];
+}
+const useLS = (k, i) => useStore(k, i, 'local');
+const useSS = (k, i) => useStore(k, i, 'session');
+
+/* ================================================================
+   DATA (taken from the screenshots + survey)
+================================================================ */
+const STUDENT = { name: 'WAJID ALI', roll: '2K23/SWEE/84', dept: 'SOFTWARE ENGINEERING (FET)', program: 'BS (SOFTWARE ENGINEERING)', batch: '2023' };
+const TEACHERS = [
+  { id: 't1', name: 'Dr. Zeeshan Memon', title: 'Lecturer, Software Engineering' },
+  { id: 't2', name: 'Prof. Naseem Chandio', title: 'Professor, HCI & BPE' },
+  { id: 't3', name: 'Sir Imtiaz Solangi', title: 'Assistant Professor, Simulation' },
+  { id: 't4', name: 'Ms. Rubina Khoso', title: 'Lecturer, SE Subjects' },
+];
+const COURSES = [
+  { code: 'SE23510', name: 'HUMAN COMPUTER INTERACTION', cr: 3, sem: 'Sixth Semester', t: 't2', bt: 0, bp: 0 },
+  { code: 'SE23512', name: 'BUSINESS PROCESS ENGINEERING', cr: 3, sem: 'Sixth Semester', t: 't2', bt: 21, bp: 13 },
+  { code: 'SE23514', name: 'SOFTWARE CONSTRUCTION AND DEVELOPMENT', cr: 3, sem: 'Sixth Semester', t: 't1', bt: 20, bp: 20 },
+  { code: 'SE23515', name: 'SOFTWARE CONSTRUCTION AND DEVELOPMENT (LAB)', cr: 1, sem: 'Sixth Semester', t: 't1', bt: 18, bp: 10 },
+  { code: 'SE23516', name: 'SIMULATIONS AND MODELLING', cr: 3, sem: 'Sixth Semester', t: 't3', bt: 30, bp: 26 },
+  { code: 'SE23518', name: 'UNIVERSITY SUBJECT -III', cr: 3, sem: 'Sixth Semester', t: 't3', bt: 24, bp: 15 },
+  { code: 'SE23520', name: 'SE SUBJECT -IV', cr: 3, sem: 'Sixth Semester', t: 't4', bt: 32, bp: 28 },
+  { code: 'SE23406', name: 'OPERATING SYSTEMS', cr: 3, sem: 'Fourth Semester', t: 't1', bt: 0, bp: 0 },
+  { code: 'SE23702', name: 'INFORMATION SECURITY', cr: 3, sem: 'Seventh Semester', t: 't1', bt: 0, bp: 0 },
+  { code: 'SE23701', name: 'FINAL YEAR PROJECT (PART-I)', cr: 3, sem: 'Seventh Semester', t: 't1', bt: 0, bp: 0 },
+];
+const TEACHER_COURSES = ['SE23514', 'SE23515', 'SE23406', 'SE23702', 'SE23701'];
+const SEMS = ['First Semester', 'Second Semester', 'Third Semester', 'Fourth Semester', 'Fifth Semester', 'Sixth Semester', 'Seventh Semester', 'Eighth Semester'];
+const ROSTER = [
+  ['03', 'AAMIR HUSSAIN'], ['09', 'ABDUL REHMAN SOOMRO'], ['17', 'ALIYA KHATOON'], ['22', 'FARHAN AHMED MEMON'],
+  ['31', 'HINA BHUTTO'], ['38', 'IMRAN ALI CHANDIO'], ['45', 'KIRAN SHAIKH'], ['52', 'MEHWISH JUNEJO'],
+  ['60', 'NOMAN QURESHI'], ['71', 'SANA MIRANI'], ['79', 'WAQAS AHMED LASHARI'], ['84', 'WAJID ALI'],
+].map(([n, name]) => ({ roll: `2K23/SWEE/${n}`, name }));
+const cOf = code => COURSES.find(c => c.code === code);
+const cName = code => (cOf(code) ? cOf(code).name : code);
+const TEACHER_USER = TEACHERS[0];
+
+const SCALE = [[85, 'A+', 4], [80, 'A', 3.6], [75, 'B+', 3.2], [70, 'B', 2.8], [65, 'C+', 2.4], [60, 'C', 2], [55, 'D+', 1.6], [50, 'D', 1.2], [0, 'F', 0]];
+const MAXES = { a: 10, s: 20, m: 30, f: 50 };
+function calc(m, cr) {
+  const vals = [m.a, m.s, m.m, m.f];
+  const blank = vals.every(v => v === '' || v == null);
+  const obt = Math.min(100, vals.reduce((x, v) => x + (Number(v) || 0), 0));
+  const [, g, gp] = SCALE.find(s => obt >= s[0]);
+  return { blank, obt, g, gp, qp: Math.round(gp * cr * 10) / 10, pass: obt >= 50 };
+}
+
+/* attendance: base counts (from screenshot) + live sessions marked by teacher */
+const BASE = (() => {
+  const b = {};
+  COURSES.forEach((c, ci) => {
+    b[c.code] = {};
+    ROSTER.forEach((s, si) => {
+      if (s.roll === STUDENT.roll) b[c.code][s.roll] = { total: c.bt, present: c.bp };
+      else { const miss = c.bt ? hh(si * 11 + ci * 5) % (Math.floor(c.bt * 0.35) + 1) : 0; b[c.code][s.roll] = { total: c.bt, present: c.bt - miss }; }
+    });
+  });
+  return b;
+})();
+function attOf(sessions, roll, code) {
+  const b = BASE[code][roll];
+  let t = b.total, p = b.present;
+  Object.keys(sessions).forEach(k => {
+    if (k.startsWith(code + '|')) { const st = sessions[k] && sessions[k][roll]; if (st) { t++; if (st === 'P' || st === 'L') p++; } }
+  });
+  return { t, p, pct: t ? Math.round((p * 100) / t) : 0 };
+}
+const needMore = (t, p) => Math.max(0, Math.ceil((0.75 * t - p) / 0.25));
+
+/* seeds */
+function seedMarks() {
+  const w = { SE23510: [9, 8, 23, 41], SE23512: [10, 10, 28, 32], SE23514: [9, 11, 19, 44], SE23515: [9, 15, 14, 42], SE23516: [9, 8, 20, 35], SE23518: [6, 7, 23, 34], SE23520: [10, 20, 21, 34] };
+  const m = {};
+  COURSES.filter(c => c.sem === 'Sixth Semester').forEach((c, ci) => {
+    m[c.code] = {};
+    ROSTER.forEach((s, si) => {
+      if (s.roll === STUDENT.roll) { const v = w[c.code]; m[c.code][s.roll] = { a: v[0], s: v[1], m: v[2], f: v[3] }; }
+      else { const n = si * 7 + ci * 3; m[c.code][s.roll] = { a: 5 + hh(n + 1) % 6, s: 8 + hh(n + 2) % 13, m: 12 + hh(n + 3) % 19, f: 20 + hh(n + 4) % 31 }; }
+    });
+  });
+  return m;
+}
+function seedUploads() {
+  const H = 3600e3;
+  return [
+    { id: uid(), course: 'SE23701', type: 'Assignment', title: 'Project Proposal & SRS Document', desc: 'Submit your FYP proposal together with the SRS (IEEE 830 format).', due: addDays(5), ts: Date.now() - 2 * H, fileName: 'FYP_Part1_Guidelines.txt', size: 1840, data: null },
+    { id: uid(), course: 'SE23514', type: 'Assignment', title: 'Assignment 3: Refactoring & Design Patterns', desc: 'Refactor the given legacy module and apply at least two design patterns.', due: addDays(7), ts: Date.now() - 26 * H, fileName: 'SCD_Assignment3.txt', size: 2210, data: null },
+    { id: uid(), course: 'SE23406', type: 'Lecture Material', title: 'Week 6: CPU Scheduling Slides', desc: 'FCFS, SJF, Priority and Round Robin with worked examples.', due: '', ts: Date.now() - 50 * H, fileName: 'OS_Week6_Scheduling.txt', size: 3120, data: null },
+  ];
+}
+function seedQuizzes() {
+  const Q = (q, opts, ans) => ({ q, opts, ans });
+  return [
+    { id: 'q1', title: 'SCD Quiz 1: Construction Fundamentals', course: 'SE23514', minutes: 5, ts: Date.now() - 20 * 3600e3, questions: [
+      Q('Which principle says a module should have only one reason to change?', ['Open/Closed', 'Single Responsibility', 'Liskov Substitution', 'Dependency Inversion'], 1),
+      Q('Which design pattern guarantees a class has only one instance?', ['Factory', 'Observer', 'Singleton', 'Adapter'], 2),
+      Q('Refactoring means:', ['Adding new features', 'Changing external behaviour', 'Improving internal structure without changing behaviour', 'Deleting old tests'], 2),
+      Q('Which testing level verifies individual functions or classes?', ['Unit testing', 'Integration testing', 'System testing', 'Acceptance testing'], 0),
+      Q('Which of these is a version control system?', ['Jira', 'Git', 'Docker', 'Maven'], 1)] },
+    { id: 'q2', title: 'Operating Systems Quiz: Scheduling & Memory', course: 'SE23406', minutes: 5, ts: Date.now() - 40 * 3600e3, questions: [
+      Q('Which scheduling algorithm can cause starvation?', ['Round Robin', 'FCFS', 'Priority Scheduling', 'None of these'], 2),
+      Q('A deadlock needs all of these conditions EXCEPT:', ['Mutual exclusion', 'Hold and wait', 'Preemption', 'Circular wait'], 2),
+      Q('Which technique removes external fragmentation?', ['Paging', 'Contiguous allocation', 'Variable partitions', 'Swapping only'], 0),
+      Q('A process in the ready state is waiting for:', ['I/O completion', 'The CPU', 'A semaphore', 'A page fault'], 1),
+      Q('Which of these is NOT an operating system?', ['Linux', 'Android', 'MySQL', 'FreeBSD'], 2)] },
+    { id: 'q3', title: 'Information Security Quiz: Basics', course: 'SE23702', minutes: 4, ts: Date.now() - 60 * 3600e3, questions: [
+      Q('CIA triad stands for:', ['Confidentiality, Integrity, Availability', 'Control, Identity, Access', 'Cryptography, Integrity, Authentication', 'Confidentiality, Identity, Authorization'], 0),
+      Q('Which algorithm is asymmetric?', ['AES', 'RSA', 'DES', 'RC4'], 1),
+      Q('The best defence against SQL injection is:', ['Longer passwords', 'Prepared statements', 'Hiding the database', 'Using HTTP'], 1),
+      Q('Hashing is:', ['Reversible encryption', 'A one-way function', 'A key exchange', 'A compression method'], 1),
+      Q('Phishing is:', ['A social-engineering attack with fake messages', 'A hardware failure', 'A DDoS attack', 'A memory leak'], 0)] },
+  ];
+}
+function seedChats() {
+  const now = Date.now(), H = 3600e3, me = 'S:' + STUDENT.roll;
+  const m = (from, text, ago) => ({ id: uid(), from, text, ts: now - ago });
+  return {
+    ['t1|' + STUDENT.roll]: [
+      m('T:t1', 'Assalam o Alaikum! Software Construction ki assignment upload kar di hai.', 5 * H),
+      m(me, 'Walaikum assalam sir, ji dekh li. Due date kya hai?', 4.8 * H),
+      m('T:t1', 'Sunday tak. Late submission accept nahi hogi.', 4.5 * H),
+      m(me, 'Ji sir, theek hai.', 4.4 * H),
+      m('T:t1', 'Attendance 75% se kam walon ko alert bhej diya hai, dashboard check kar lena.', 20e3),
+    ],
+    ['t2|' + STUDENT.roll]: [m('T:t2', 'HCI ki next class ke notes upload kar raha hoon.', 30 * H)],
+    ['t1|2K23/SWEE/03']: [m('S:2K23/SWEE/03', 'Sir, OS quiz kab hoga?', 3 * H), m('T:t1', 'Is hafte. Online Quizzes tab mein aa jayega.', 2.9 * H)],
+    ['t1|2K23/SWEE/09']: [m('S:2K23/SWEE/09', 'Sir lab manual ka link nahi khul raha.', 6 * H)],
+    ['grp|6SWEE']: [
+      m('T:t1', 'Reminder: SCD quiz is hafte hai. Online Quizzes tab check karein.', 8 * H),
+      m('S:2K23/SWEE/09', 'Sir kya ye mobile par bhi chalega?', 7.5 * H),
+      m('T:t1', 'Ji haan, poora LMS ab mobile-friendly hai.', 7.4 * H),
+    ],
+  };
+}
+
+const T_REPLIES = ['Walaikum assalam! Ji bataiye.', 'Okay, noted. Class mein discuss karte hain.', 'Assignment ki due date LMS par likhi hui hai.', 'Please apni query detail mein likh dein, main check karta hoon.', 'Theek hai, kal office hours mein mil lein.'];
+const S_REPLIES = ['Ji sir, theek hai.', 'Sir, assignment upload kar diya hai.', 'Thank you sir!', 'Sir, attendance check kar dein please.', 'Ji sir, main dekh leta hoon.'];
+
+/* ================================================================
+   ICONS
+================================================================ */
+const ICONS = {
+  home: ['M3 11l9-8 9 8', 'M5 10v10h5v-6h4v6h5V10'],
+  cap: ['M2 9l10-5 10 5-10 5-10-5z', 'M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5', 'M22 9v6'],
+  grad: ['M12 3a4 4 0 100 8 4 4 0 000-8z', 'M4 21c0-4 3.5-6 8-6s8 2 8 6', 'M8 6.5h8'],
+  clock: ['M12 3a9 9 0 100 18 9 9 0 000-18z', 'M12 7v5l3 2'],
+  folder: ['M6 3h9l4 4v14H6z', 'M14 3v5h5', 'M9 13h7M9 17h7'],
+  list: ['M3 5h18v14H3z', 'M7 9h10M7 12h10M7 15h6'],
+  cash: ['M3 6h18v12H3z', 'M12 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z'],
+  download: ['M12 3v12', 'M7 10l5 5 5-5', 'M4 20h16'],
+  upload: ['M12 17V5', 'M7 10l5-5 5 5', 'M4 20h16'],
+  plane: ['M22 2L11 13', 'M22 2l-7 20-4-9-9-4z'],
+  book: ['M5 3h13a1 1 0 011 1v16H7a2 2 0 01-2-2z', 'M5 18a2 2 0 012-2h12'],
+  bed: ['M3 18V6', 'M3 14h18v4', 'M21 14v-3a3 3 0 00-3-3h-7v6'],
+  bell: ['M18 16v-5a6 6 0 10-12 0v5l-2 2h16z', 'M10 21h4'],
+  menu: ['M4 6h16', 'M4 12h16', 'M4 18h16'],
+  chev: ['M6 9l6 6 6-6'],
+  user: ['M12 4a4 4 0 100 8 4 4 0 000-8z', 'M4 21c0-4 4-6 8-6s8 2 8 6'],
+  search: ['M11 4a7 7 0 100 14 7 7 0 000-14z', 'M21 21l-5-5'],
+  plus: ['M12 5v14', 'M5 12h14'],
+  trash: ['M4 7h16', 'M9 7V4h6v3', 'M6 7l1 13h10l1-13'],
+  chat: ['M21 12a8 8 0 01-12 7l-5 1 1-4A8 8 0 1121 12z'],
+  chart: ['M4 20V10', 'M10 20V4', 'M16 20v-8', 'M22 20H2'],
+  quiz: ['M12 3a9 9 0 100 18 9 9 0 000-18z', 'M9.5 9a2.5 2.5 0 115 0c0 1.5-2.5 2-2.5 4', 'M12 17h.01'],
+  back: ['M15 18l-6-6 6-6'],
+  send: ['M3 11l18-8-8 18-2-8z'],
+  star: ['M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z'],
+  smile: ['M12 3a9 9 0 100 18 9 9 0 000-18z', 'M8 14s1.5 2.5 4 2.5 4-2.5 4-2.5', 'M9 9.5h.01M15 9.5h.01'],
+  alert: ['M12 3l10 18H2z', 'M12 10v5', 'M12 18h.01'],
+};
+function Icon({ n, size = 20, sw = 1.8, className = '' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      {(ICONS[n] || []).map((d, i) => <path key={i} d={d} />)}
+    </svg>
+  );
+}
+function Seal({ size = 56 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="30" fill="#e8e6dc" stroke="#6b6b5a" strokeWidth="2" />
+      <circle cx="32" cy="32" r="22" fill="#4f7a3f" stroke="#caa84a" strokeWidth="2" />
+      <path d="M20 40c4-10 8-14 12-14s8 4 12 14z" fill="#caa84a" />
+      <circle cx="32" cy="24" r="4" fill="#e8e6dc" />
+    </svg>
+  );
+}
+
+/* ================================================================
+   SMALL UI PIECES
+================================================================ */
+const Ctx = React.createContext(null);
+const useApp = () => React.useContext(Ctx);
+
+function Card({ title, right, children, className = '' }) {
+  return (
+    <section className={`bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,.14)] p-4 mb-6 ${className}`}>
+      {title && (
+        <div className="bg-navy text-white rounded px-6 py-6 mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-bold">{title}</h2>{right}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto" onClick={onClose}>
+      <div className={`bg-white rounded shadow-xl mt-10 w-full ${wide ? 'max-w-3xl' : 'max-w-xl'}`} onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b">
+          <h3 className="text-2xl font-medium">{title}</h3>
+          <button onClick={onClose} className="text-3xl text-gray-400 leading-none" aria-label="Close">×</button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+const Pct = ({ v, t }) => <span className={t === 0 ? '' : v < 75 ? 'text-red-600 font-bold' : ''}>{v}%</span>;
+function Bar({ v, color }) {
+  const c = color || (v < 75 ? '#dc3545' : v < 85 ? '#f0ad4e' : '#28a745');
+  return <div className="h-2.5 bg-gray-200 rounded w-full min-w-[70px]"><div style={{ width: Math.min(100, v) + '%', background: c }} className="h-full rounded" /></div>;
+}
+function Avatar({ name, size = 40, src, ring }) {
+  const st = { width: size, height: size, background: avColor(name), fontSize: size * 0.38, border: ring ? '4px solid #20c4c4' : 'none' };
+  return src ? <img src={src} alt="" style={{ width: size, height: size, border: st.border }} className="rounded-full object-cover shrink-0" />
+    : <div style={st} className="rounded-full text-white font-medium flex items-center justify-center shrink-0">{initials(name)}</div>;
+}
+function Empty({ children }) { return <div className="text-center text-gray-500 py-10 text-sm">{children}</div>; }
+function CourseSelect({ value, onChange, codes }) {
+  return <select className="inp" value={value} onChange={e => onChange(e.target.value)}>{codes.map(c => <option key={c} value={c}>{c} – {cName(c)}</option>)}</select>;
+}
+function Chip({ label, value, sub, tone }) {
+  const tones = { red: 'border-red-300 bg-red-50 text-red-700', green: 'border-green-300 bg-green-50 text-green-700', blue: 'border-blue-300 bg-blue-50 text-blue-700', amber: 'border-amber-300 bg-amber-50 text-amber-800' };
+  return <div className={`border rounded-lg px-4 py-3 ${tones[tone]}`}><div className="text-xs font-bold">{label}</div><div className="text-2xl font-bold leading-tight">{value}</div><div className="text-xs">{sub}</div></div>;
+}
+
+/* ================================================================
+   APP STORE / CONTEXT
+================================================================ */
+function unreadFor(chats, lastRead, t0, meId, role) {
+  let n = 0;
+  Object.keys(chats).forEach(key => {
+    const mine = key.startsWith('grp') || (role === 'student' ? key.endsWith('|' + STUDENT.roll) : key.startsWith('t1|'));
+    if (!mine) return;
+    const lr = lastRead[meId + '|' + key] != null ? lastRead[meId + '|' + key] : t0;
+    chats[key].forEach(m => { if (m.from !== meId && m.ts > lr) n++; });
+  });
+  return n;
+}
+
+function App() {
+  const [session, setSession] = useSS('session', null);
+  const [page, setPage] = useSS('page', 'dashboard');
+  const [sessions, setSessions] = useLS('att_sessions', {});
+  const [marks, setMarks] = useLS('marks', seedMarks);
+  const [uploads, setUploads] = useLS('uploads', seedUploads);
+  const [quizzes, setQuizzes] = useLS('quizzes', seedQuizzes);
+  const [attempts, setAttempts] = useLS('attempts', []);
+  const [chats, setChats] = useLS('chats', seedChats);
+  const [lastRead, setLastRead] = useLS('lastread', {});
+  const [t0] = useLS('t0', () => Date.now() - 60000);
+  const [readIds, setReadIds] = useLS('readnotifs', []);
+  const [fee, setFee] = useLS('fee', { due: '2026-10-09', paid: false });
+  const [avatar, setAvatar] = useLS('avatar', null);
+  const [examForm, setExamForm] = useLS('examform', null);
+  const [, tick] = useState(0);
+  useEffect(() => { const id = setInterval(() => tick(x => x + 1), 30000); return () => clearInterval(id); }, []);
+
+  const role = session ? session.role : null;
+  const me = role === 'teacher' ? { id: 'T:t1', name: TEACHER_USER.name } : { id: 'S:' + STUDENT.roll, name: STUDENT.name };
+  const unreadMsgs = session ? unreadFor(chats, lastRead, t0, me.id, role) : 0;
+
+  const stats = useMemo(() => {
+    const six = COURSES.filter(c => c.sem === 'Sixth Semester');
+    let T = 0, P = 0;
+    six.forEach(c => { const a = attOf(sessions, STUDENT.roll, c.code); T += a.t; P += a.p; });
+    return { overall: T ? Math.round((P * 100) / T) : 0, T, P };
+  }, [sessions]);
+
+  const notifs = useMemo(() => {
+    if (!role) return [];
+    const L = [];
+    if (role === 'student') {
+      const d = daysBetween(isoDate(), fee.due);
+      if (fee.paid) L.push({ id: 'fee:paid:' + fee.due, level: 'ok', icon: 'cash', title: 'Semester fee paid', text: 'Admission to Next Higher Study challan (EIGHTH SEMESTER) is marked as PAID.', when: 'Fee status', go: 'admission' });
+      else if (d < 0) L.push({ id: 'fee:over:' + fee.due, level: 'danger', icon: 'cash', title: 'Semester fee UNPAID: challan expired', text: `EIGHTH SEMESTER fee challan was due on ${dmy(fee.due)} (${-d} day${-d > 1 ? 's' : ''} overdue). Generate a new challan to pay.`, when: 'Fee status', go: 'admission' });
+      else L.push({ id: 'fee:due:' + fee.due, level: d <= 3 ? 'warn' : 'info', icon: 'cash', title: 'Semester fee due ' + dmy(fee.due), text: `EIGHTH SEMESTER fee is unpaid. ${d === 0 ? 'Last day today!' : d + ' day(s) left.'}`, when: 'Fee status', go: 'admission' });
+
+      L.push({ id: 'attall:' + stats.overall, level: stats.overall < 75 ? 'danger' : 'ok', icon: 'clock', title: `Live attendance: ${stats.overall}%`, text: stats.overall < 75 ? 'Your overall attendance is BELOW the 75% requirement. You may not be allowed in the exam.' : 'Your overall attendance is above the 75% requirement. Keep it up.', when: 'Live', go: 'attendance' });
+      COURSES.filter(c => c.sem === 'Sixth Semester').forEach(c => {
+        const a = attOf(sessions, STUDENT.roll, c.code);
+        if (a.t > 0 && a.pct < 75) L.push({ id: `att:${c.code}:${a.pct}`, level: 'danger', icon: 'alert', title: `Attendance alert: ${c.name}`, text: `Only ${a.pct}% (${a.p}/${a.t}). Attend the next ${needMore(a.t, a.p)} class(es) in a row to reach 75%.`, when: 'Live', go: 'attendance' });
+      });
+      [...uploads].sort((a, b) => b.ts - a.ts).slice(0, 5).forEach(u => {
+        const isA = u.type === 'Assignment';
+        L.push({ id: 'up:' + u.id, level: 'info', icon: isA ? 'folder' : 'upload', title: isA ? `New Assignment uploaded in ${cName(u.course)}` : `New material uploaded in ${cName(u.course)}`, text: `${u.title}${u.due ? ' · Due ' + dmy(u.due) : ''}`, when: timeAgo(u.ts), go: 'downloads' });
+      });
+      quizzes.forEach(q => { if (!attempts.find(a => a.quizId === q.id && a.roll === STUDENT.roll)) L.push({ id: 'quiz:' + q.id, level: 'warn', icon: 'quiz', title: `Quiz available: ${cName(q.course)}`, text: `${q.title} · ${q.questions.length} questions · ${q.minutes} min`, when: timeAgo(q.ts), go: 'quizzes' }); });
+    } else {
+      ['SE23514', 'SE23515'].forEach(code => {
+        const low = ROSTER.filter(s => { const a = attOf(sessions, s.roll, code); return a.t > 0 && a.pct < 75; });
+        if (low.length) L.push({ id: `low:${code}:${low.length}`, level: 'danger', icon: 'alert', title: `${low.length} student(s) below 75% in ${cName(code)}`, text: low.slice(0, 3).map(s => s.name).join(', ') + (low.length > 3 ? ' …' : ''), when: 'Live', go: 'reports' });
+      });
+      attempts.slice(-3).reverse().forEach(a => { const qz = quizzes.find(q => q.id === a.quizId); L.push({ id: 'att:' + a.id, level: 'info', icon: 'quiz', title: `${a.name} submitted a quiz`, text: `${qz ? qz.title : 'Quiz'}: ${a.score}/${a.total}`, when: timeAgo(a.ts), go: 'quizzes' }); });
+    }
+    if (unreadMsgs > 0) L.push({ id: 'msg:' + unreadMsgs, level: 'info', icon: 'chat', title: `${unreadMsgs} unread message${unreadMsgs > 1 ? 's' : ''}`, text: role === 'student' ? 'Your teachers have sent you new messages.' : 'Students have sent you new messages.', when: 'Chat', go: 'chat' });
+    return L;
+  }, [role, fee, stats, sessions, uploads, quizzes, attempts, unreadMsgs]);
+
+  const unreadNotifs = notifs.filter(n => !readIds.includes(n.id)).length;
+  const markRead = ids => setReadIds(r => Array.from(new Set([...r, ...ids])));
+
+  const go = useCallback(p => { setPage(p); window.scrollTo(0, 0); }, []);
+  const login = r => { setSession({ role: r }); setPage('dashboard'); try { sessionStorage.removeItem('uos_lms_survey'); } catch (e) {} };
+  const logout = () => { setSession(null); setPage('dashboard'); };
+  const resetAll = () => {
+    if (!window.confirm('Reset all demo data (chats, attendance, marks, uploads, quizzes)?')) return;
+    try { Object.keys(localStorage).filter(k => k.startsWith('uos_lms_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    window.location.reload();
+  };
+
+  const value = { role, me, page, go, session, login, logout, resetAll, sessions, setSessions, marks, setMarks, uploads, setUploads, quizzes, setQuizzes, attempts, setAttempts, chats, setChats, lastRead, setLastRead, t0, fee, setFee, avatar, setAvatar, examForm, setExamForm, stats, notifs, readIds, markRead, unreadNotifs, unreadMsgs };
+
+  return <Ctx.Provider value={value}>{session ? <Shell /> : <LoginPage />}</Ctx.Provider>;
+}
+
+/* ================================================================
+   LOGIN
+================================================================ */
+function LoginPage() {
+  const { login } = useApp();
+  const [mode, setMode] = useState('roll');
+  const [id, setId] = useState('');
+  const [pw, setPw] = useState('');
+  const [msg, setMsg] = useState('');
+  const submit = e => {
+    e.preventDefault();
+    if (!id.trim() || !pw) { setMsg('Please enter your ' + (mode === 'roll' ? 'Roll No / CNIC' : 'Passport number') + ' and password.'); return; }
+    login(id.trim().toLowerCase() === 'teacher' ? 'teacher' : 'student');
+  };
+  return (
+    <div className="min-h-screen bg-white">
+      <header className="bg-white shadow flex flex-wrap items-center justify-between px-4 md:px-[14%] py-3 gap-2">
+        <div className="flex items-center gap-2"><Seal size={50} /><span className="text-2xl text-gray-800">University of Sindh, Jamshoro</span></div>
+        <nav className="flex gap-6 text-[14px] text-gray-700 items-center">
+          <span className="flex items-center gap-1"><Icon n="home" size={18} />HOME</span>
+          <span className="flex items-center gap-1"><Icon n="user" size={18} />LOGIN</span>
+          <span className="flex items-center gap-1"><Icon n="cash" size={18} />VERIFY ONLINE PAYMENTS</span>
+        </nav>
+      </header>
+      <div className="grid md:grid-cols-[minmax(0,470px)_1fr] gap-8 px-4 md:px-10 py-8">
+        <form onSubmit={submit} className="bg-[#fafaff] rounded-2xl shadow-lg p-4 self-start">
+          <div className="bg-[#5260b0] text-white text-center text-5xl font-light py-10 rounded shadow">LOGIN</div>
+          <div className="mt-5 text-gray-500 text-lg flex items-center gap-4 flex-wrap">
+            <b>Login with:</b>
+            <label className="flex items-center gap-1"><input type="radio" checked={mode === 'roll'} onChange={() => setMode('roll')} />Roll No / CNIC</label>
+            <label className="flex items-center gap-1"><input type="radio" checked={mode === 'pass'} onChange={() => setMode('pass')} />Passport</label>
+          </div>
+          <label className="block mt-5 text-gray-500">{mode === 'roll' ? 'Roll No / CNIC' : 'Passport No'} <span className="text-red-500">* {mode === 'roll' && '(without dashes)'}</span></label>
+          <input className="inp mt-1 !py-3" value={id} onChange={e => setId(e.target.value)} placeholder={mode === 'roll' ? 'e.g., 2K16/CSM/32 or 4210112345671' : 'e.g., AB1234567'} />
+          <label className="block mt-4 text-gray-500">Password <span className="text-red-500">*</span></label>
+          <input className="inp mt-1 !py-3" type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="Enter password" />
+          {msg && <div className="text-red-600 text-sm mt-3">{msg}</div>}
+          <button className="w-full mt-6 py-4 rounded text-white text-lg bg-[#6246ea] shadow hover:opacity-90">LOGIN</button>
+          <div className="text-center mt-6 mb-2"><button type="button" onClick={() => setMsg('Password reset link sent to your registered email (demo).')} className="border border-gray-700 rounded px-8 py-4 text-xs bg-white">FORGOT PASSWORD?</button></div>
+        </form>
+        <div className="bg-[#fafaff] rounded-2xl shadow-lg p-4 self-start">
+          <div className="bg-[#5260b0] text-white text-center text-3xl font-light py-8 rounded">Important Notes / Instructions</div>
+          <ul className="p-5 text-gray-700 list-disc ml-5 space-y-2">
+            <li><b>Student demo login:</b> Roll No <code className="bg-gray-100 px-1">2K23/SWEE/84</code> with any password.</li>
+            <li><b>Teacher demo login:</b> type <code className="bg-gray-100 px-1">teacher</code> with any password.</li>
+            <li>Open the portal in two browser tabs (one as student, one as teacher) to see chat and attendance update live.</li>
+          </ul>
+        </div>
+      </div>
+      <footer className="flex flex-wrap justify-between px-4 md:px-[18%] pb-4 text-sm"><b className="text-xs">DEVELOPER TEAM</b><span>©2020, IT Services Centre, University of Sindh, Jamshoro</span></footer>
+    </div>
+  );
+}
+
+/* ================================================================
+   SHELL (sidebar + header + footer)
+================================================================ */
+const STUDENT_NAV = [
+  ['dashboard', 'LMS Dashboard', 'home'], ['eportal', 'Eportal Dashboard', 'home'], ['program', 'Choose Program', 'grad'],
+  ['vcr', 'Virtual Class Room', 'cap'], ['attendance', 'Attendance', 'clock'], ['courses', 'Course Selection / Examination Form', 'folder'],
+  ['results', 'Exams Result Notice Board', 'list'], ['admission', 'Admission', 'cap'], ['scholarship', 'Scholarship', 'cash'], ['downloads', 'Downloads', 'download'],
+  ['chat', 'Teacher–Student Chat', 'chat', true], ['quizzes', 'Online Quizzes', 'quiz', true], ['reports', 'Performance Reports', 'chart', true],
+];
+const TEACHER_NAV = [
+  ['dashboard', 'LMS Dashboard', 'home'], ['vcr', 'Virtual Class Room', 'cap'], ['attendance', 'Attendance', 'clock'], ['grades', 'Grades / Marks', 'list'],
+  ['materials', 'Upload Materials', 'upload'], ['quizzes', 'Online Quizzes', 'quiz', true], ['reports', 'Performance Reports', 'chart', true],
+  ['chat', 'Teacher–Student Chat', 'chat', true], ['downloads', 'Downloads', 'download'],
+];
+
+function Shell() {
+  const { role, page, go, logout, resetAll, notifs, readIds, markRead, unreadNotifs, unreadMsgs, avatar } = useApp();
+  const [open, setOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const [modal, setModal] = useState(null);
+  const nav = role === 'teacher' ? TEACHER_NAV : STUDENT_NAV;
+  const userName = role === 'teacher' ? TEACHER_USER.name.toUpperCase() : STUDENT.name;
+  const goto = p => { go(p); setOpen(false); setMenu(null); };
+
+  return (
+    <div className="min-h-screen flex flex-col" onClick={() => setMenu(null)}>
+      {open && <div className="fixed inset-0 bg-black/40 z-30 md:hidden" onClick={() => setOpen(false)} />}
+      <aside className={`fixed top-0 left-0 bottom-0 z-40 w-[250px] bg-uos text-white overflow-y-auto scroll-thin transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'} ${collapsed ? 'md:-translate-x-full' : 'md:translate-x-0'}`}>
+        <div className="flex items-center gap-2 px-3 py-3 h-[64px]">
+          <Seal size={48} />
+          <div className="leading-none"><div className="serif-logo text-2xl">ITSC</div><br /><div className="serif-logo text-[22px]">University of Sindh</div></div>
+        </div>
+        <nav className="mt-2">
+          {nav.map(([id, label, icon, isNew]) => (
+            <button key={id} onClick={() => goto(id)} className={`w-full flex items-center gap-3 px-4 py-[13px] text-left text-[15px] ${page === id ? 'bg-white/20' : 'hover:bg-white/10'}`}>
+              <Icon n={icon} size={20} />
+              <span className="flex-1 leading-tight">{label}</span>
+              {id === 'chat' && unreadMsgs > 0 && <span className="bg-green-500 text-[11px] rounded-full px-1.5 py-0.5">{unreadMsgs}</span>}
+              {isNew && <span className="bg-white/90 text-uos text-[9px] font-bold rounded px-1">NEW</span>}
+            </button>
+          ))}
+        </nav>
+      </aside>
+
+      <div className={`flex-1 flex flex-col transition-all duration-200 ${collapsed ? 'md:ml-0' : 'md:ml-[250px]'}`}>
+        <header className="sticky top-0 z-30 bg-uos text-white h-[64px] flex items-center px-3 md:px-4 gap-3 md:gap-8">
+          <button onClick={e => { e.stopPropagation(); window.innerWidth < 768 ? setOpen(o => !o) : setCollapsed(c => !c); }} aria-label="Toggle menu"><Icon n="menu" size={22} /></button>
+          <button onClick={() => goto('dashboard')} className="hidden sm:block text-[14px]">LMS Dashboard</button>
+          <button onClick={() => setModal('img')} className="hidden sm:block text-[14px]">Update Profile Image</button>
+          <div className="flex-1" />
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setMenu(m => (m === 'bell' ? null : 'bell'))} className="relative p-1" aria-label="Notifications">
+              <Icon n="bell" size={24} />
+              {unreadNotifs > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] min-w-[16px] h-4 rounded-full flex items-center justify-center px-1">{unreadNotifs}</span>}
+            </button>
+            {menu === 'bell' && (
+              <div className="absolute right-0 top-11 w-[320px] max-w-[92vw] bg-white text-gray-800 shadow-xl rounded z-50">
+                <div className="text-center py-3 border-b text-[15px]">Notifications</div>
+                <div className="max-h-[320px] overflow-y-auto">
+                  {notifs.length === 0 && <Empty>No notifications</Empty>}
+                  {notifs.slice(0, 6).map(n => (
+                    <button key={n.id} onClick={() => { markRead([n.id]); goto(n.go); }} className="w-full text-left px-4 py-2.5 border-b hover:bg-gray-50 flex gap-2">
+                      <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${readIds.includes(n.id) ? 'bg-gray-300' : n.level === 'danger' ? 'bg-red-500' : 'bg-blue-500'}`} />
+                      <span><span className="block text-[13px] font-medium leading-tight">{n.title}</span><span className="block text-[12px] text-gray-500">{n.when}</span></span>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => { markRead(notifs.map(n => n.id)); goto('dashboard'); }} className="w-full py-3 text-[13px] text-gray-500 hover:text-uos">View All Notification</button>
+              </div>
+            )}
+          </div>
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setMenu(m => (m === 'user' ? null : 'user'))} className="flex items-center gap-2">
+              <Avatar name={userName} size={36} src={avatar} />
+              <span className="hidden sm:block text-[15px] font-medium">{userName}</span><Icon n="chev" size={16} />
+            </button>
+            {menu === 'user' && (
+              <div className="absolute right-0 top-12 w-[230px] bg-white text-gray-800 shadow-xl rounded z-50 py-2">
+                {[['My Profile', () => goto('profile')], ['Update Profile Image', () => { setMenu(null); setModal('img'); }], ['Change Password', () => { setMenu(null); setModal('pwd'); }], ['Reset Demo Data', resetAll], ['Log Out', logout]].map(([l, f]) => (
+                  <button key={l} onClick={f} className="w-full text-left px-6 py-3 hover:bg-gray-50 text-[15px]">{l}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </header>
+
+        <main className="flex-1 p-3 md:p-6">{renderPage(page, role)}</main>
+
+        <footer className="bg-uos text-white px-4 md:px-6 h-[48px] flex items-center justify-between text-[13px] gap-2">
+          <span className="font-medium">Developer Team</span><span className="text-right">©2019, IT Services Center, University Of Sindh, Jamshoro</span>
+        </footer>
+      </div>
+      {modal === 'img' && <ImageModal onClose={() => setModal(null)} />}
+      {modal === 'pwd' && <PasswordModal onClose={() => setModal(null)} />}
+    </div>
+  );
+}
+
+function ImageModal({ onClose }) {
+  const { setAvatar } = useApp();
+  const [prev, setPrev] = useState(null);
+  const onFile = e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas'); const s = 200; c.width = c.height = s;
+        const ctx = c.getContext('2d'); const m = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width - m) / 2, (img.height - m) / 2, m, m, 0, 0, s, s);
+        setPrev(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = r.result;
+    };
+    r.readAsDataURL(f);
+  };
+  return (
+    <Modal title="Update Profile Image" onClose={onClose}>
+      <input type="file" accept="image/*" onChange={onFile} className="inp" />
+      {prev && <img src={prev} alt="preview" className="w-32 h-32 rounded-full object-cover mt-4 border-4 border-[#20c4c4]" />}
+      <div className="flex gap-2 mt-5 justify-end">
+        <button className="btn btn-gray" onClick={() => { setAvatar(null); onClose(); }}>Remove image</button>
+        <button className="btn" disabled={!prev} onClick={() => { setAvatar(prev); onClose(); }}>Save image</button>
+      </div>
+    </Modal>
+  );
+}
+function PasswordModal({ onClose }) {
+  const [a, setA] = useState(''), [b, setB] = useState(''), [c, setC] = useState(''), [msg, setMsg] = useState(null);
+  const save = () => {
+    if (!a) return setMsg(['err', 'Enter your current password.']);
+    if (b.length < 6) return setMsg(['err', 'New password must be at least 6 characters.']);
+    if (b !== c) return setMsg(['err', 'New password and confirmation do not match.']);
+    setMsg(['ok', 'Password changed successfully (demo).']); setTimeout(onClose, 1200);
+  };
+  return (
+    <Modal title="Change Password" onClose={onClose}>
+      <label className="lbl">Current password</label><input type="password" className="inp" value={a} onChange={e => setA(e.target.value)} />
+      <label className="lbl">New password</label><input type="password" className="inp" value={b} onChange={e => setB(e.target.value)} />
+      <label className="lbl">Confirm new password</label><input type="password" className="inp" value={c} onChange={e => setC(e.target.value)} />
+      {msg && <div className={`mt-3 text-sm ${msg[0] === 'err' ? 'text-red-600' : 'text-green-700'}`}>{msg[1]}</div>}
+      <div className="text-right mt-5"><button className="btn" onClick={save}>Change password</button></div>
+    </Modal>
+  );
+}
+
+function renderPage(page, role) {
+  const T = role === 'teacher';
+  switch (page) {
+    case 'dashboard': return <Dashboard />;
+    case 'eportal': return <Eportal />;
+    case 'profile': return <Profile />;
+    case 'program': return <Program />;
+    case 'vcr': return <VirtualClass />;
+    case 'attendance': return T ? <TeacherAttendance /> : <StudentAttendance />;
+    case 'courses': return <CourseSelection />;
+    case 'results': return <ResultBoard />;
+    case 'admission': return <Admission />;
+    case 'scholarship': return <Scholarship />;
+    case 'downloads': return <Downloads />;
+    case 'chat': return <ChatPage />;
+    case 'quizzes': return T ? <QuizTeacher /> : <QuizStudent />;
+    case 'reports': return T ? <ReportsTeacher /> : <ReportsStudent />;
+    case 'grades': return <Grades />;
+    case 'materials': return <Materials />;
+    case 'evaluation': return <Evaluation />;
+    case 'hec': return <HecSurvey />;
+    case 'pickdrop': return <PickDrop />;
+    case 'library': return <Library />;
+    case 'hostel': return <Hostel />;
+    default: return <Dashboard />;
+  }
+}
+
+/* ================================================================
+   DASHBOARD + NOTIFICATIONS
+================================================================ */
+const LEVEL_STYLE = {
+  danger: 'border-red-500 bg-red-50 text-red-700',
+  warn: 'border-amber-500 bg-amber-50 text-amber-800',
+  info: 'border-blue-500 bg-blue-50 text-blue-800',
+  ok: 'border-green-500 bg-green-50 text-green-800',
+};
+function NotifCenter() {
+  const { role, notifs, readIds, markRead, go, fee, stats, uploads, sessions, quizzes, attempts } = useApp();
+  const [all, setAll] = useState(false);
+  const list = all ? notifs : notifs.slice(0, 8);
+  const feeDays = daysBetween(isoDate(), fee.due);
+  const newAssign = uploads.filter(u => u.type === 'Assignment' && Date.now() - u.ts < 7 * 864e5).length;
+  const chips = role === 'student' ? [
+    <Chip key="f" label="SEMESTER FEE" value={fee.paid ? 'PAID' : 'UNPAID'} sub={fee.paid ? 'Eighth semester cleared' : `Due ${dmy(fee.due)}${feeDays < 0 ? ' (expired)' : ''}`} tone={fee.paid ? 'green' : 'red'} />,
+    <Chip key="a" label="LIVE ATTENDANCE" value={stats.overall + '%'} sub={stats.overall < 75 ? 'Below 75%: red alert' : 'Above 75%'} tone={stats.overall < 75 ? 'red' : 'green'} />,
+    <Chip key="n" label="NEW ASSIGNMENTS" value={newAssign} sub="uploaded in last 7 days" tone="blue" />,
+    <Chip key="q" label="PENDING QUIZZES" value={quizzes.filter(q => !attempts.find(a => a.quizId === q.id && a.roll === STUDENT.roll)).length} sub="not attempted yet" tone="amber" />,
+  ] : [
+    <Chip key="a" label="AT-RISK STUDENTS" value={ROSTER.filter(s => ['SE23514', 'SE23515'].some(c => { const a = attOf(sessions, s.roll, c); return a.t > 0 && a.pct < 75; })).length} sub="below 75% attendance" tone="red" />,
+    <Chip key="u" label="UPLOADS" value={uploads.length} sub="materials & assignments" tone="blue" />,
+    <Chip key="q" label="QUIZZES" value={quizzes.length} sub={attempts.length + ' attempts so far'} tone="amber" />,
+    <Chip key="c" label="CLASS STRENGTH" value={ROSTER.length} sub="6th Semester SWEE" tone="green" />,
+  ];
+  return (
+    <Card className="!p-4">
+      <div className="bg-navy text-white rounded px-5 py-4 mb-4 flex flex-wrap items-center gap-3 justify-between">
+        <h2 className="text-xl font-bold flex items-center gap-2"><Icon n="bell" size={22} />Notifications</h2>
+        <button className="text-xs bg-white/20 hover:bg-white/30 rounded px-3 py-1.5" onClick={() => markRead(notifs.map(n => n.id))}>Mark all as read</button>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">{chips}</div>
+      <div className="space-y-2">
+        {list.length === 0 && <Empty>You're all caught up.</Empty>}
+        {list.map(n => {
+          const unread = !readIds.includes(n.id);
+          return (
+            <div key={n.id} className={`border-l-4 rounded px-4 py-3 flex items-start gap-3 ${LEVEL_STYLE[n.level]}`}>
+              <Icon n={n.icon} size={22} className="mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-[14px] flex items-center gap-2">{n.title}{unread && <span className="text-[10px] bg-red-500 text-white rounded px-1.5">NEW</span>}</div>
+                <div className="text-[13px] text-gray-700">{n.text}</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">{n.when}</div>
+              </div>
+              <button className="btn !py-1 !px-3 !text-xs shrink-0" onClick={() => { markRead([n.id]); go(n.go); }}>View</button>
+            </div>
+          );
+        })}
+      </div>
+      {notifs.length > 8 && <div className="text-center mt-3"><button className="text-uos text-sm underline" onClick={() => setAll(a => !a)}>{all ? 'Show less' : `Show all (${notifs.length})`}</button></div>}
+    </Card>
+  );
+}
+
+function Tile({ icon, title, sub, onClick, isNew }) {
+  return (
+    <button onClick={onClick} className="text-left bg-white shadow-sm hover:shadow-md transition flex items-center gap-5 px-6 py-7">
+      <span className="text-[#0b6bf0] shrink-0"><Icon n={icon} size={50} sw={1.3} /></span>
+      <span>
+        <span className="block text-[#0b6bf0] font-bold text-[15px] leading-tight">{title}{isNew && <span className="ml-2 text-[10px] bg-green-500 text-white px-1.5 rounded align-middle">NEW</span>}</span>
+        <span className="block text-[15px] mt-1 text-[#333]">{sub}</span>
+      </span>
+    </button>
+  );
+}
+function Dashboard() {
+  const { role, go, avatar } = useApp();
+  const [survey, setSurvey] = useSS('survey', false);
+  const T = role === 'teacher';
+  const tiles = T ? [
+    ['attendance', 'Attendance', 'Mark & track attendance', 'clock'], ['grades', 'Grades / Marks', 'Enter marks, auto GPA', 'list'], ['materials', 'Upload Materials', 'Materials & assignments', 'upload'],
+    ['quizzes', 'Online Quizzes', 'Create and review quizzes', 'quiz', 1], ['reports', 'Performance Reports', 'Class performance', 'chart', 1], ['chat', 'Teacher–Student Chat', 'Message your students', 'chat', 1],
+    ['vcr', 'Virtual Class Room', 'Virtual Class Room', 'cap'], ['downloads', 'Downloads', 'Pdfs and Other Documents', 'download'], ['profile', 'My Profile', 'Your details', 'user'],
+  ] : [
+    ['dashboard', 'LMS Dashboard', 'LMS Dashboard', 'home'], ['eportal', 'Eportal Dashboard', 'ITSC Eportal Dashboard', 'home'], ['program', 'Choose Program', 'Choose your degree program', 'grad'],
+    ['vcr', 'Virtual Class Room', 'Virtual Class Room', 'cap'], ['attendance', 'Attendance', 'Check your attendance', 'clock'], ['courses', 'Course Selection / Examination Form', 'Course selection', 'folder'],
+    ['results', 'Exams Result Notice Board', 'Notice Board For Results', 'list'], ['admission', 'Admission', 'Your payment details', 'cap'], ['scholarship', 'Scholarship', 'Financial Aid Office', 'cash'],
+    ['downloads', 'Downloads', 'Pdfs and Other Documents', 'download'], ['evaluation', 'Course Evaluation', 'Higher Education Commission', 'plane'], ['hec', 'HEC Survey Form', 'Higher Education Commission', 'plane'],
+    ['pickdrop', 'Points Pick/Drop Locations', 'Points Pick/Drop Locations', 'plane'], ['library', 'Koha Library', 'Koha Library', 'book'], ['hostel', 'Hostel', 'Form/ Paid Fees History', 'bed'],
+    ['chat', 'Teacher–Student Chat', 'Message your teachers', 'chat', 1], ['quizzes', 'Online Quizzes', 'Attempt quizzes online', 'quiz', 1], ['reports', 'Performance Reports', 'Your marks & attendance', 'chart', 1],
+  ];
+  return (
+    <div>
+      <NotifCenter />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className={`bg-white shadow-sm sm:col-span-2 xl:col-span-1 ${T ? 'xl:row-span-3' : 'xl:row-span-4'} pb-6 text-center`}>
+          <div className="h-[200px] relative overflow-hidden" style={{ background: 'linear-gradient(#a9d4ee 0%, #dcebd3 70%, #7aa65a 100%)' }}>
+            <svg viewBox="0 0 300 200" className="absolute inset-0 w-full h-full"><rect x="40" y="70" width="220" height="70" fill="#f3efe4" /><rect x="40" y="62" width="220" height="10" fill="#cfc8b4" />{[...Array(11)].map((_, i) => <rect key={i} x={48 + i * 19.5} y="78" width="9" height="56" fill="#2b4e74" />)}<ellipse cx="150" cy="165" rx="70" ry="9" fill="#a6987a" /><rect x="136" y="118" width="28" height="48" rx="8" fill="#8a5a2b" /></svg>
+          </div>
+          <div className="-mt-[58px] relative flex justify-center"><Avatar name={T ? TEACHER_USER.name : STUDENT.name} size={116} src={avatar} ring /></div>
+          <div className="text-2xl font-medium mt-3">{T ? TEACHER_USER.name.toUpperCase() : STUDENT.name}</div>
+          <div className="text-[15px] mt-2 flex items-center justify-center gap-1.5"><Icon n="home" size={15} />{T ? 'SOFTWARE ENGINEERING (FET)' : STUDENT.dept}</div>
+          <div className="text-[15px] font-medium mt-4">{T ? TEACHER_USER.title : STUDENT.program}</div>
+          <div className="text-[15px] font-medium mt-1">{T ? 'Faculty ID: FET-SE-017' : STUDENT.roll}</div>
+          <button onClick={() => go(T ? 'profile' : 'program')} className="mt-3 px-6 py-3 bg-[#0b6bf0] text-white rounded-sm text-[15px]">{T ? 'View My Profile' : 'Choose Your Program'}</button>
+        </div>
+        {tiles.map(([p, t, s, i, n]) => <Tile key={p + t} icon={i} title={t} sub={s} isNew={!!n} onClick={() => go(p)} />)}
+      </div>
+      {!T && !survey && (
+        <Modal title="Youth Experiences, Opinions, and Future Outlook Survey" onClose={() => setSurvey(true)} wide>
+          <p className="text-red-600 font-bold text-[21px] leading-snug">This anonymous survey collects your views on your experiences, opinions, and future outlook as a university student in Pakistan. Your input/responses will help build a powerful, data-driven framework to better understand civic engagement and social resilience among youth. Your responses are completely confidential and will be used anonymously only for research purposes.</p>
+          <button className="text-[#0b6bf0] mt-4" onClick={() => { setSurvey(true); go('hec'); }}>Click here to submit Survey.</button>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ================================================================
+   STUDENT: Attendance
+================================================================ */
+function StudentAttendance() {
+  const { sessions } = useApp();
+  const [sem, setSem] = useState('Sixth Semester');
+  const rows = COURSES.filter(c => c.sem === sem).map(c => ({ c, ...attOf(sessions, STUDENT.roll, c.code) }));
+  const T = rows.reduce((x, r) => x + r.t, 0), P = rows.reduce((x, r) => x + r.p, 0);
+  const cum = T ? Math.round((P * 100) / T) : 0;
+  return (
+    <Card title="Your Semester Attendance">
+      <label className="lbl">Select Semester</label>
+      <select className="inp mb-5" value={sem} onChange={e => setSem(e.target.value)}>{SEMS.map(s => <option key={s}>{s}</option>)}</select>
+      {rows.length === 0 ? <Empty>No attendance records found for {sem}.</Empty> : (
+        <div className="overflow-x-auto">
+          <table className="tbl">
+            <thead><tr><th>COURSE NO</th><th>SUBJECTS</th><th className="text-center">TOTAL CLASSES</th><th className="text-center">PRESENT</th><th className="text-center">PERCENTAGE</th></tr></thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.c.code}><td>{r.c.code}</td><td>{r.c.name}</td><td className="text-center">{r.t}</td><td className="text-center">{r.p}</td>
+                  <td className="text-center"><Pct v={r.pct} t={r.t} />{r.t > 0 && r.pct < 75 && <span className="ml-2 text-[10px] bg-red-500 text-white rounded px-1.5 py-0.5">BELOW 75%</span>}</td></tr>
+              ))}
+              <tr><td colSpan={3} className="font-bold">CUMULATIVE PERCENTAGE</td><td colSpan={2} className="text-center font-bold"><Pct v={cum} t={T} /></td></tr>
+              <tr><td colSpan={3} className="font-bold">DATE</td><td colSpan={2} className="text-center font-bold">{fmtLong(new Date())}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-xs text-gray-500 mt-3">Attendance below 75% is shown in red. Percentages update live when your teacher marks attendance.</p>
+    </Card>
+  );
+}
+
+/* ================================================================
+   TEACHER: Attendance marking
+================================================================ */
+function TeacherAttendance() {
+  const { sessions, setSessions } = useApp();
+  const [code, setCode] = useState(TEACHER_COURSES[0]);
+  const [date, setDate] = useState(isoDate());
+  const key = code + '|' + date;
+  const cur = sessions[key] || {};
+  const setOne = (roll, st) => setSessions(s => { const o = { ...(s[key] || {}) }; if (o[roll] === st) delete o[roll]; else o[roll] = st; return { ...s, [key]: o }; });
+  const markAll = st => setSessions(s => ({ ...s, [key]: Object.fromEntries(ROSTER.map(r => [r.roll, st])) }));
+  const clearAll = () => setSessions(s => { const n = { ...s }; delete n[key]; return n; });
+  const count = st => ROSTER.filter(r => cur[r.roll] === st).length;
+  const unmarked = ROSTER.filter(r => !cur[r.roll]).length;
+  const rows = ROSTER.map(r => ({ r, ...attOf(sessions, r.roll, code) }));
+  const classAvg = Math.round(rows.reduce((x, r) => x + r.pct, 0) / rows.length);
+  const hist = Object.keys(sessions).filter(k => k.startsWith(code + '|') && Object.keys(sessions[k] || {}).length).map(k => k.split('|')[1]).sort().reverse();
+  const stBtn = (roll, st, label, on) => <button onClick={() => setOne(roll, st)} className={`px-3 py-1.5 text-xs font-bold rounded border ${cur[roll] === st ? on + ' text-white border-transparent' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>{label}</button>;
+  return (
+    <Card title="Mark Attendance">
+      <div className="grid md:grid-cols-[1fr_200px] gap-3">
+        <div><label className="lbl !mt-0">Course</label><CourseSelect value={code} onChange={setCode} codes={TEACHER_COURSES} /></div>
+        <div><label className="lbl !mt-0">Class date</label><input type="date" className="inp" value={date} max={isoDate()} onChange={e => e.target.value && setDate(e.target.value)} /></div>
+      </div>
+      <div className="flex flex-wrap gap-2 my-4 items-center">
+        <button className="btn btn-green" onClick={() => markAll('P')}>Mark All Present</button>
+        <button className="btn btn-red" onClick={() => markAll('A')}>Mark All Absent</button>
+        <button className="btn btn-gray" onClick={clearAll}>Clear</button>
+        <div className="ml-auto text-xs text-gray-600 flex flex-wrap gap-3">
+          <span className="text-green-700 font-bold">Present {count('P')}</span><span className="text-red-600 font-bold">Absent {count('A')}</span>
+          <span className="text-amber-700 font-bold">Leave {count('L')}</span><span>Unmarked {unmarked}</span><span className="font-bold">Class avg {classAvg}%</span>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="tbl">
+          <thead><tr><th>S.NO</th><th>ROLL NO</th><th>NAME</th><th>TODAY'S STATUS</th><th className="text-center">TOTAL</th><th className="text-center">PRESENT</th><th>LIVE %</th></tr></thead>
+          <tbody>
+            {rows.map(({ r, t, p, pct }, i) => (
+              <tr key={r.roll} className={t > 0 && pct < 75 ? 'bg-red-50' : ''}>
+                <td>{i + 1}</td><td>{r.roll}</td><td className="font-medium">{r.name}</td>
+                <td><div className="flex gap-1">{stBtn(r.roll, 'P', 'Present', 'bg-green-600')}{stBtn(r.roll, 'A', 'Absent', 'bg-red-600')}{stBtn(r.roll, 'L', 'Leave', 'bg-amber-500')}</div></td>
+                <td className="text-center">{t}</td><td className="text-center">{p}</td>
+                <td><div className="flex items-center gap-2 min-w-[120px]"><Pct v={pct} t={t} /><Bar v={pct} /></div></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-500 mt-3">Changes save instantly. Leave counts as an excused class (treated as present). Students below 75% are highlighted red and receive an alert.</p>
+      {hist.length > 0 && (
+        <div className="mt-4"><div className="font-bold text-sm mb-2">Session history for this course</div>
+          <div className="flex flex-wrap gap-2">{hist.map(d => <button key={d} onClick={() => setDate(d)} className={`text-xs px-3 py-1 rounded border ${d === date ? 'bg-uos text-white' : 'bg-white'}`}>{dmy(d)}</button>)}</div></div>
+      )}
+    </Card>
+  );
+}
+
+/* ================================================================
+   RESULTS (student) + GRADES (teacher)
+================================================================ */
+function ResultBoard() {
+  const { marks } = useApp();
+  const [sem, setSem] = useState('Sixth Semester');
+  const [year, setYear] = useState('2025');
+  const [type, setType] = useState('Regular');
+  let rows = [];
+  if (type === 'Regular') {
+    rows = COURSES.filter(c => c.sem === sem).map(c => {
+      const m = marks[c.code] && marks[c.code][STUDENT.roll];
+      return m ? { c, m, ...calc(m, c.cr) } : null;
+    }).filter(Boolean);
+  } else if (sem === 'First Semester' && year === '2026') {
+    rows = [
+      { c: { code: 'SE23304', name: 'ELECTRONIC DEVICES AND CIRCUITS', cr: 2 }, m: { a: '--', s: '--', m: '--', f: 60 }, blank: false, obt: 60, g: 'C', qp: 4, pass: true },
+      { c: { code: 'SE23306', name: 'CALCULUS AND ANALYTICAL GEOMETRY', cr: 3 }, m: { a: '--', s: '--', m: '--', f: 85 }, blank: false, obt: 85, g: 'A+', qp: 12, pass: true },
+    ];
+  }
+  const live = rows.filter(r => !r.blank);
+  const sgpa = live.length ? (live.reduce((x, r) => x + r.qp, 0) / live.reduce((x, r) => x + r.c.cr, 0)).toFixed(2) : null;
+  const semLabel = { 'First Semester': '1st', 'Second Semester': '2nd', 'Third Semester': '3rd', 'Fourth Semester': '4th', 'Fifth Semester': '5th', 'Sixth Semester': '6th', 'Seventh Semester': '7th', 'Eighth Semester': '8th' }[sem];
+  const info = [['Roll NO', STUDENT.roll], ['EXAM YEAR', year], ['EXAM TYPE', type.toUpperCase()], ['SEMESTER', semLabel], ['REPORT DATE', fmtLong(new Date())]];
+  return (
+    <Card title="Semester Examination Result Notice Board">
+      <p className="text-red-500 text-[13px] mb-3">This is digital notice board for to display department result only for students' information. It is not officially announced result by controller office.</p>
+      <label className="lbl !mt-0">Select Semester</label><select className="inp" value={sem} onChange={e => setSem(e.target.value)}>{SEMS.map(s => <option key={s}>{s}</option>)}</select>
+      <label className="lbl">Exam Year</label><select className="inp" value={year} onChange={e => setYear(e.target.value)}>{['2026', '2025', '2024', '2023'].map(s => <option key={s}>{s}</option>)}</select>
+      <label className="lbl">Exam Type</label><select className="inp" value={type} onChange={e => setType(e.target.value)}><option>Regular</option><option>Improver/ Failure</option></select>
+      {rows.length === 0 ? <Empty>No result found for the selected semester, year and exam type.</Empty> : (
+        <>
+          <table className="w-full mt-4 text-[13px]"><tbody>{info.map(([a, b]) => <tr key={a} className="bg-[#d9edf7] border-b border-white"><td className="px-2 py-2 w-1/2">{a}</td><td className="px-2 py-2 font-bold">{b}</td></tr>)}</tbody></table>
+          <div className="overflow-x-auto mt-3">
+            <table className="tbl">
+              <thead className="bg-[#fcf8e3]"><tr>{['COURSE NO', 'SUBJECTS', 'ATTEN. MRK.', 'ASSIGN. MRK.', 'MID. MRK.', 'FINAL. MRK.', 'OBT. MRK.', 'GRADE', 'QP', 'REMARKS'].map(h => <th key={h}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.c.code}>
+                    <td>{r.c.code}</td><td>{r.c.name}</td>
+                    {['a', 's', 'm', 'f'].map(f => <td key={f}>{r.blank ? '##' : (r.m[f] === '' ? '--' : r.m[f])}</td>)}
+                    <td>{r.blank ? '##' : r.obt}</td><td>{r.blank ? '##' : r.g}</td><td>{r.blank ? '##' : r.qp}</td>
+                    <td>{r.blank ? <span className="badge-proc">STILL IN PROCESS</span> : r.pass ? <span className="badge-pass">PASS</span> : <span className="badge-pass !bg-red-600">FAIL</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {sgpa && <div className="mt-3 text-sm font-bold">SGPA (this semester): <span className="text-uos">{sgpa}</span> <span className="font-normal text-gray-500">· credit hours {live.reduce((x, r) => x + r.c.cr, 0)}</span></div>}
+          <p className="text-[12px] text-[#31708f] mt-3">[##] Means that the award list is <span className="badge-proc">STILL IN PROCESS</span> &amp; not announced by the instructor on students E-portal. You may contact with your instructor for information.</p>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function Grades() {
+  const { marks, setMarks } = useApp();
+  const [code, setCode] = useState(TEACHER_COURSES[0]);
+  const [saved, setSaved] = useState(false);
+  const course = cOf(code);
+  const rows = ROSTER.map(s => { const m = (marks[code] && marks[code][s.roll]) || { a: '', s: '', m: '', f: '' }; return { s, m, ...calc(m, course.cr) }; });
+  const filled = rows.filter(r => !r.blank);
+  const avg = filled.length ? (filled.reduce((x, r) => x + r.obt, 0) / filled.length).toFixed(1) : '--';
+  const classGpa = filled.length ? (filled.reduce((x, r) => x + r.gp, 0) / filled.length).toFixed(2) : '--';
+  const passRate = filled.length ? Math.round((filled.filter(r => r.pass).length * 100) / filled.length) : 0;
+  const upd = (roll, f, v) => {
+    const val = v === '' ? '' : Math.max(0, Math.min(MAXES[f], Number(v)));
+    setMarks(M => ({ ...M, [code]: { ...(M[code] || {}), [roll]: { a: '', s: '', m: '', f: '', ...((M[code] || {})[roll] || {}), [f]: val } } }));
+    setSaved(true); setTimeout(() => setSaved(false), 1200);
+  };
+  return (
+    <Card title="Grades / Marks Entry" right={<span className={`text-xs transition ${saved ? 'opacity-100' : 'opacity-0'}`}>Saved ✓</span>}>
+      <label className="lbl !mt-0">Course ({course.cr} credit hour{course.cr > 1 ? 's' : ''})</label>
+      <CourseSelect value={code} onChange={setCode} codes={TEACHER_COURSES} />
+      <div className="overflow-x-auto mt-4">
+        <table className="tbl">
+          <thead><tr><th>ROLL NO</th><th>NAME</th><th className="text-center">ATTEN. (10)</th><th className="text-center">ASSIGN. (20)</th><th className="text-center">MID (30)</th><th className="text-center">FINAL (50)</th><th className="text-center">TOTAL</th><th className="text-center">GRADE</th><th className="text-center">GP</th><th className="text-center">QP</th><th>REMARKS</th></tr></thead>
+          <tbody>
+            {rows.map(({ s, m, blank, obt, g, gp, qp, pass }) => (
+              <tr key={s.roll}>
+                <td>{s.roll}</td><td className="font-medium">{s.name}</td>
+                {['a', 's', 'm', 'f'].map(f => <td key={f} className="text-center"><input type="number" min="0" max={MAXES[f]} className="num" value={m[f]} onChange={e => upd(s.roll, f, e.target.value)} /></td>)}
+                <td className="text-center font-bold">{blank ? '--' : obt}</td><td className="text-center font-bold">{blank ? '--' : g}</td><td className="text-center">{blank ? '--' : gp.toFixed(1)}</td><td className="text-center">{blank ? '--' : qp}</td>
+                <td>{blank ? <span className="badge-proc">PENDING</span> : pass ? <span className="badge-pass">PASS</span> : <span className="badge-pass !bg-red-600">FAIL</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+        <Chip label="CLASS AVERAGE" value={avg} sub="out of 100" tone="blue" />
+        <Chip label="CLASS GPA" value={classGpa} sub="average grade point" tone="green" />
+        <Chip label="PASS RATE" value={passRate + '%'} sub={`${filled.filter(r => r.pass).length} of ${filled.length} entered`} tone="amber" />
+        <Chip label="HIGHEST" value={filled.length ? Math.max(...filled.map(r => r.obt)) : '--'} sub="top score" tone="green" />
+      </div>
+      <p className="text-xs text-gray-500 mt-3">Total = sum of the four components (max 100). Grade scale (inferred from the result screenshot): A+ ≥85, A ≥80, B+ ≥75, B ≥70, C+ ≥65, C ≥60, D+ ≥55, D ≥50. QP = grade point × credit hours. Marks appear instantly on the student Result Notice Board.</p>
+    </Card>
+  );
+}
+
+/* ================================================================
+   MATERIALS (teacher upload) + DOWNLOADS
+================================================================ */
+function Materials() {
+  const { uploads, setUploads } = useApp();
+  const [f, setF] = useState({ course: TEACHER_COURSES[0], type: 'Lecture Material', title: '', desc: '', due: addDays(7) });
+  const [file, setFile] = useState(null);
+  const [prog, setProg] = useState(null);
+  const [err, setErr] = useState('');
+  const [drag, setDrag] = useState(false);
+  const input = useRef(null);
+  const take = fl => { if (fl) { setFile(fl); setErr(''); if (!f.title) setF(x => ({ ...x, title: fl.name.replace(/\.[^.]+$/, '') })); } };
+  const submit = () => {
+    if (!f.title.trim()) return setErr('Please enter a title.');
+    if (!file) return setErr('Please choose a file to upload.');
+    setErr(''); setProg(0);
+    const reader = new FileReader();
+    let dataUrl = null, done = false;
+    reader.onload = () => { dataUrl = file.size <= 700 * 1024 ? reader.result : null; done = true; };
+    reader.onerror = () => { done = true; };
+    reader.readAsDataURL(file);
+    let p = 0;
+    const id = setInterval(() => {
+      p += 20; setProg(Math.min(p, 100));
+      if (p >= 100 && done) {
+        clearInterval(id);
+        setUploads(u => [{ id: uid(), course: f.course, type: f.type, title: f.title.trim(), desc: f.desc.trim(), due: f.type === 'Assignment' ? f.due : '', ts: Date.now(), fileName: file.name, size: file.size, data: dataUrl }, ...u]);
+        setTimeout(() => { setProg(null); setFile(null); setF(x => ({ ...x, title: '', desc: '' })); if (input.current) input.current.value = ''; }, 500);
+      }
+    }, 120);
+  };
+  return (
+    <>
+      <Card title="Upload Materials & Assignments">
+        <div className="grid md:grid-cols-2 gap-x-4">
+          <div><label className="lbl !mt-0">Course</label><CourseSelect value={f.course} onChange={v => setF({ ...f, course: v })} codes={TEACHER_COURSES} /></div>
+          <div><label className="lbl !mt-0">Type</label><select className="inp" value={f.type} onChange={e => setF({ ...f, type: e.target.value })}><option>Lecture Material</option><option>Assignment</option><option>Lab Manual</option></select></div>
+          <div><label className="lbl">Title</label><input className="inp" value={f.title} onChange={e => setF({ ...f, title: e.target.value })} placeholder="e.g. Assignment 4: UML Diagrams" /></div>
+          {f.type === 'Assignment' && <div><label className="lbl">Due date</label><input type="date" className="inp" value={f.due} onChange={e => setF({ ...f, due: e.target.value })} /></div>}
+        </div>
+        <label className="lbl">Description</label><textarea className="inp" rows={2} value={f.desc} onChange={e => setF({ ...f, desc: e.target.value })} />
+        <div onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={e => { e.preventDefault(); setDrag(false); take(e.dataTransfer.files[0]); }}
+          onClick={() => input.current && input.current.click()} className={`mt-4 border-2 border-dashed rounded-lg p-8 text-center cursor-pointer ${drag ? 'border-uos bg-blue-50' : 'border-gray-300'}`}>
+          <Icon n="upload" size={34} className="mx-auto text-uos" />
+          <div className="mt-2 text-sm">{file ? <b>{file.name} ({(file.size / 1024).toFixed(1)} KB)</b> : 'Drag & drop a file here, or click to browse'}</div>
+          <input ref={input} type="file" className="hidden" onChange={e => take(e.target.files[0])} />
+        </div>
+        {prog !== null && <div className="mt-3"><div className="h-3 bg-gray-200 rounded"><div className="h-full bg-green-500 rounded transition-all" style={{ width: prog + '%' }} /></div><div className="text-xs mt-1">{prog < 100 ? `Uploading… ${prog}%` : 'Upload complete ✓'}</div></div>}
+        {err && <div className="text-red-600 text-sm mt-2">{err}</div>}
+        <div className="text-right mt-4"><button className="btn" disabled={prog !== null} onClick={submit}>Upload to students</button></div>
+        <p className="text-xs text-gray-500">Students are notified instantly: “New Assignment uploaded in &lt;subject&gt;”.</p>
+      </Card>
+      <Card title="Uploaded Items">
+        {uploads.length === 0 ? <Empty>Nothing uploaded yet.</Empty> : (
+          <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>COURSE</th><th>TYPE</th><th>TITLE</th><th>UPLOADED</th><th>DUE</th><th>FILE</th><th></th></tr></thead>
+            <tbody>{uploads.map((u, i) => (
+              <tr key={u.id}><td>{i + 1}</td><td>{cName(u.course)}</td><td>{u.type}</td><td className="font-medium">{u.title}</td><td>{fmtLong(u.ts)}</td><td>{u.due ? dmy(u.due) : '-'}</td>
+                <td><button className="text-[#0b6bf0] underline" onClick={() => downloadUpload(u)}>{u.fileName}</button></td>
+                <td><button className="text-red-600" aria-label="Delete" onClick={() => setUploads(x => x.filter(y => y.id !== u.id))}><Icon n="trash" size={18} /></button></td></tr>
+            ))}</tbody></table></div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+const STATIC_DOCS = [
+  ['Academic Calendar 2026', 'Academic_Calendar_2026.txt', 'First semester classes begin in September; mid-term exams in November; final exams in January.'],
+  ['Examination Form Instructions', 'Exam_Form_Instructions.txt', 'Fill the examination form, pay the challan before the due date and submit a copy to the department.'],
+  ['Fee Structure BS Software Engineering', 'Fee_Structure_BSSE.txt', 'Tuition and semester fees are charged per semester as listed on the Admission page.'],
+];
+function Downloads() {
+  const { uploads } = useApp();
+  return (
+    <>
+      <Card title="Course Materials & Assignments">
+        {uploads.length === 0 ? <Empty>No materials uploaded yet.</Empty> : (
+          <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>COURSE</th><th>TYPE</th><th>TITLE</th><th>UPLOADED</th><th>DUE DATE</th><th>DOWNLOAD</th></tr></thead>
+            <tbody>{uploads.map((u, i) => (
+              <tr key={u.id}><td>{i + 1}</td><td>{cName(u.course)}</td><td>{u.type === 'Assignment' ? <span className="text-xs bg-amber-100 text-amber-800 rounded px-2 py-0.5 font-bold">Assignment</span> : u.type}</td>
+                <td className="font-medium">{u.title}<div className="text-xs text-gray-500 font-normal">{u.desc}</div></td><td>{fmtLong(u.ts)}</td><td>{u.due ? dmy(u.due) : '-'}</td>
+                <td><button className="text-[#0b6bf0] inline-flex items-center gap-1" onClick={() => downloadUpload(u)}><Icon n="download" size={16} />Download</button></td></tr>
+            ))}</tbody></table></div>
+        )}
+      </Card>
+      <Card title="University Documents">
+        <div className="overflow-x-auto"><table className="tbl"><tbody>{STATIC_DOCS.map(([t, fn, body], i) => (
+          <tr key={fn}><td>{i + 1}</td><td className="font-medium">{t}</td><td className="text-right"><button className="text-[#0b6bf0] inline-flex items-center gap-1" onClick={() => downloadBlob(fn, `${t}\nUniversity of Sindh, Jamshoro\n\n${body}\n`)}><Icon n="download" size={16} />Download</button></td></tr>
+        ))}</tbody></table></div>
+      </Card>
+    </>
+  );
+}
+
+/* ================================================================
+   CHAT (WhatsApp Web style)
+================================================================ */
+const nameOf = id => { const x = id.startsWith('T:') ? TEACHERS.find(t => 'T:' + t.id === id) : ROSTER.find(r => 'S:' + r.roll === id); return x ? x.name : ''; };
+function makeContacts(role) {
+  const grp = { key: 'grp|6SWEE', id: 'grp', name: '6th Semester SWEE – Class Group', sub: 'Group · 12 students, 4 teachers', group: true };
+  if (role === 'student') return [grp, ...TEACHERS.map(t => ({ key: t.id + '|' + STUDENT.roll, id: 'T:' + t.id, name: t.name, sub: t.title }))];
+  return [grp, ...ROSTER.map(s => ({ key: 't1|' + s.roll, id: 'S:' + s.roll, name: s.name, sub: s.roll }))];
+}
+const EMOJIS = ['😀', '😂', '🙏', '👍', '❤️', '🎉', '📚', '✅', '😅', '🤝'];
+
+function ChatPage() {
+  const { role, me, chats, setChats, lastRead, setLastRead, t0 } = useApp();
+  const contacts = useMemo(() => makeContacts(role), [role]);
+  const [active, setActive] = useState(() => (window.innerWidth >= 768 ? contacts.find(c => !c.group).key : null));
+  const [q, setQ] = useState('');
+  const [text, setText] = useState('');
+  const [typing, setTyping] = useState(null);
+  const [emoji, setEmoji] = useState(false);
+  const [auto, setAuto] = useLS('autoreply', true);
+  const endRef = useRef(null);
+  const cur = contacts.find(c => c.key === active);
+  const msgs = (active && chats[active]) || [];
+  useEffect(() => {
+    if (active) setLastRead(l => ({ ...l, [me.id + '|' + active]: Date.now() }));
+    if (endRef.current) endRef.current.scrollIntoView({ block: 'end' });
+  }, [active, msgs.length, typing]);
+
+  const lastOf = k => { const a = chats[k]; return a && a.length ? a[a.length - 1] : null; };
+  const unread = k => { const lr = lastRead[me.id + '|' + k] != null ? lastRead[me.id + '|' + k] : t0; return (chats[k] || []).filter(m => m.from !== me.id && m.ts > lr).length; };
+  const list = contacts.filter(c => c.name.toLowerCase().includes(q.toLowerCase())).sort((a, b) => ((lastOf(b.key) || {}).ts || 0) - ((lastOf(a.key) || {}).ts || 0));
+
+  const send = () => {
+    const body = text.trim();
+    if (!body || !active) return;
+    const key = active, other = cur.group ? (role === 'student' ? 'T:t1' : 'S:' + pick(ROSTER).roll) : cur.id;
+    setChats(c => ({ ...c, [key]: [...(c[key] || []), { id: uid(), from: me.id, text: body, ts: Date.now() }] }));
+    setText(''); setEmoji(false);
+    if (auto) {
+      setTyping(key);
+      setTimeout(() => {
+        setChats(c => ({ ...c, [key]: [...(c[key] || []), { id: uid(), from: other, text: pick(role === 'student' ? T_REPLIES : S_REPLIES), ts: Date.now() }] }));
+        setTyping(x => (x === key ? null : x));
+      }, 1500);
+    }
+  };
+  const otherRead = m => { const lr = cur && !cur.group ? lastRead[cur.id + '|' + active] : null; return (lr != null && lr >= m.ts) || msgs.some(x => x.ts > m.ts && x.from !== me.id); };
+
+  return (
+    <div className="bg-white rounded-xl shadow-[0_2px_12px_rgba(0,0,0,.14)] overflow-hidden flex" style={{ height: 'calc(100vh - 150px)', minHeight: 520 }}>
+      <div className={`${active ? 'hidden md:flex' : 'flex'} flex-col w-full md:w-[360px] md:border-r border-[#e9edef] shrink-0`}>
+        <div className="bg-[#f0f2f5] h-[60px] px-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3"><Avatar name={me.name} size={40} /><span className="font-medium text-[#111b21]">Chats</span></div>
+          <label className="text-[11px] text-[#667781] flex items-center gap-1 cursor-pointer"><input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />Demo auto-reply</label>
+        </div>
+        <div className="p-2 bg-white shrink-0"><div className="bg-[#f0f2f5] rounded-lg flex items-center gap-3 px-3 py-1.5 text-[#667781]"><Icon n="search" size={16} /><input className="bg-transparent outline-none text-sm w-full" placeholder="Search or start new chat" value={q} onChange={e => setQ(e.target.value)} /></div></div>
+        <div className="flex-1 overflow-y-auto scroll-thin">
+          {list.map(c => {
+            const l = lastOf(c.key), u = unread(c.key);
+            return (
+              <button key={c.key} onClick={() => setActive(c.key)} className={`w-full flex items-center gap-3 px-3 hover:bg-[#f5f6f6] text-left ${active === c.key ? 'bg-[#f0f2f5]' : ''}`}>
+                <Avatar name={c.name} size={49} />
+                <div className="flex-1 min-w-0 py-3 border-b border-[#e9edef]">
+                  <div className="flex justify-between items-baseline"><span className="text-[16px] text-[#111b21] truncate">{c.name}</span><span className={`text-[12px] shrink-0 ml-2 ${u ? 'text-[#00a884] font-medium' : 'text-[#667781]'}`}>{l ? listTime(l.ts) : ''}</span></div>
+                  <div className="flex justify-between items-center"><span className="text-[14px] text-[#667781] truncate">{l ? (l.from === me.id ? '✓✓ ' : (c.group ? nameOf(l.from).split(' ')[0] + ': ' : '')) + l.text : c.sub}</span>
+                    {u > 0 && <span className="bg-[#25d366] text-white text-[12px] font-medium rounded-full min-w-[20px] h-5 px-1.5 flex items-center justify-center ml-2">{u}</span>}</div>
+                </div>
+              </button>
+            );
+          })}
+          {list.length === 0 && <Empty>No chats found</Empty>}
+        </div>
+      </div>
+      <div className={`${active ? 'flex' : 'hidden md:flex'} flex-col flex-1 min-w-0`}>
+        {!cur ? (
+          <div className="flex-1 flex flex-col items-center justify-center bg-[#f0f2f5] text-center px-6"><Icon n="chat" size={70} className="text-[#9aa5ab]" sw={1.2} /><div className="text-3xl font-light text-[#41525d] mt-4">UoS LMS Chat</div><div className="text-sm text-[#667781] mt-2">Select a teacher or student to start messaging.</div></div>
+        ) : (
+          <>
+            <div className="bg-[#f0f2f5] h-[60px] px-3 flex items-center gap-3 shrink-0">
+              <button className="md:hidden text-[#54656f]" onClick={() => setActive(null)} aria-label="Back"><Icon n="back" size={24} /></button>
+              <Avatar name={cur.name} size={40} />
+              <div className="min-w-0"><div className="text-[16px] text-[#111b21] truncate">{cur.name}</div><div className="text-[13px] text-[#667781] truncate">{typing === active ? 'typing…' : cur.sub}</div></div>
+            </div>
+            <div className="flex-1 overflow-y-auto scroll-thin wa-wall px-3 md:px-[7%] py-4">
+              {msgs.map((m, i) => {
+                const mine = m.from === me.id;
+                const showDay = i === 0 || dayLabel(msgs[i - 1].ts) !== dayLabel(m.ts);
+                return (
+                  <div key={m.id}>
+                    {showDay && <div className="flex justify-center my-3"><span className="bg-white/90 text-[#54656f] text-[12px] px-3 py-1 rounded-lg shadow-sm">{dayLabel(m.ts)}</span></div>}
+                    <div className={`flex mb-1.5 ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] md:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm text-[14.5px] text-[#111b21] ${mine ? 'bg-[#d9fdd3] rounded-tr-none' : 'bg-white rounded-tl-none'}`}>
+                        {cur.group && !mine && <div className="text-[12.5px] font-medium" style={{ color: avColor(nameOf(m.from) || 'x') }}>{nameOf(m.from)}</div>}
+                        <span className="whitespace-pre-wrap break-words">{m.text}</span>
+                        <span className="float-right ml-3 mt-1.5 text-[11px] text-[#667781] flex items-center gap-0.5 leading-none">{clockTime(m.ts)}{mine && <span className={otherRead(m) ? 'text-[#53bdeb]' : ''}>✓✓</span>}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {typing === active && <div className="flex mb-1"><div className="bg-white rounded-lg rounded-tl-none px-3 py-2 text-[#667781] text-sm shadow-sm">typing…</div></div>}
+              <div ref={endRef} />
+            </div>
+            {emoji && <div className="bg-[#f0f2f5] px-3 py-2 flex gap-2 flex-wrap border-t">{EMOJIS.map(e => <button key={e} className="text-2xl" onClick={() => setText(t => t + e)}>{e}</button>)}</div>}
+            <div className="bg-[#f0f2f5] px-3 py-2.5 flex items-center gap-2 shrink-0">
+              <button className="text-[#54656f] p-1" onClick={() => setEmoji(e => !e)} aria-label="Emoji"><Icon n="smile" size={26} /></button>
+              <input className="flex-1 bg-white rounded-lg px-4 py-2.5 outline-none text-[15px]" placeholder="Type a message" value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') send(); }} />
+              <button onClick={send} className="bg-[#00a884] text-white rounded-full w-10 h-10 flex items-center justify-center shrink-0" aria-label="Send"><Icon n="send" size={20} /></button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   ONLINE QUIZZES
+================================================================ */
+function QuizStudent() {
+  const { quizzes, attempts, setAttempts } = useApp();
+  const [run, setRun] = useState(null);
+  const [view, setView] = useState(null);
+  const mine = id => attempts.find(a => a.quizId === id && a.roll === STUDENT.roll);
+  const finish = (quiz, ans) => {
+    const score = quiz.questions.reduce((x, q, i) => x + (ans[i] === q.ans ? 1 : 0), 0);
+    const at = { id: uid(), quizId: quiz.id, roll: STUDENT.roll, name: STUDENT.name, score, total: quiz.questions.length, answers: ans, ts: Date.now() };
+    setAttempts(a => [...a, at]); setRun(null); setView(quiz.id);
+  };
+  if (run) return <QuizRunner quiz={run} onDone={ans => finish(run, ans)} />;
+  if (view) {
+    const quiz = quizzes.find(q => q.id === view), at = mine(view);
+    if (quiz && at) return (
+      <Card title="Quiz Result" right={<button className="btn btn-gray" onClick={() => setView(null)}>Back to quizzes</button>}>
+        <div className="text-center py-4"><div className="text-5xl font-bold text-uos">{at.score}/{at.total}</div><div className="text-gray-600">{Math.round(at.score * 100 / at.total)}% · {quiz.title}</div></div>
+        {quiz.questions.map((q, i) => (
+          <div key={i} className="border rounded p-3 mb-3"><div className="font-medium text-sm">{i + 1}. {q.q}</div>
+            {q.opts.map((o, j) => <div key={j} className={`text-sm px-2 py-1 mt-1 rounded ${j === q.ans ? 'bg-green-100 text-green-800 font-medium' : at.answers[i] === j ? 'bg-red-100 text-red-700' : ''}`}>{o}{j === q.ans && ' ✓'}{at.answers[i] === j && j !== q.ans && ' ✗ (your answer)'}</div>)}</div>
+        ))}
+      </Card>
+    );
+  }
+  return (
+    <Card title="Online Quizzes">
+      {quizzes.length === 0 ? <Empty>No quizzes available.</Empty> : (
+        <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>QUIZ</th><th>COURSE</th><th>QUESTIONS</th><th>TIME</th><th>STATUS</th><th></th></tr></thead>
+          <tbody>{quizzes.map((q, i) => { const a = mine(q.id); return (
+            <tr key={q.id}><td>{i + 1}</td><td className="font-medium">{q.title}</td><td>{cName(q.course)}</td><td>{q.questions.length}</td><td>{q.minutes} min</td>
+              <td>{a ? <span className="text-green-700 font-bold">Score {a.score}/{a.total}</span> : <span className="text-amber-700 font-bold">Not attempted</span>}</td>
+              <td>{a ? <button className="btn btn-gray !py-1" onClick={() => setView(q.id)}>Review</button> : <button className="btn !py-1" onClick={() => setRun(q)}>Start quiz</button>}</td></tr>); })}</tbody></table></div>
+      )}
+      <p className="text-xs text-gray-500 mt-3">Each quiz can be attempted once. It auto-submits when the timer ends.</p>
+    </Card>
+  );
+}
+function QuizRunner({ quiz, onDone }) {
+  const [ans, setAns] = useState({});
+  const [left, setLeft] = useState(quiz.minutes * 60);
+  const ref = useRef(ans); ref.current = ans;
+  const done = useRef(false);
+  const submit = () => { if (done.current) return; done.current = true; onDone(ref.current); };
+  useEffect(() => { const id = setInterval(() => setLeft(l => l - 1), 1000); return () => clearInterval(id); }, []);
+  useEffect(() => { if (left <= 0) submit(); }, [left]);
+  const answered = Object.keys(ans).length;
+  return (
+    <Card title={quiz.title} right={<span className={`px-3 py-1 rounded font-bold ${left < 60 ? 'bg-red-500' : 'bg-white/20'}`}>⏱ {pad(Math.max(0, Math.floor(left / 60)))}:{pad(Math.max(0, left % 60))}</span>}>
+      <div className="text-sm text-gray-600 mb-3">{cName(quiz.course)} · Answered {answered}/{quiz.questions.length}</div>
+      {quiz.questions.map((q, i) => (
+        <div key={i} className="border rounded p-4 mb-3">
+          <div className="font-medium mb-2">{i + 1}. {q.q}</div>
+          {q.opts.map((o, j) => <label key={j} className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer ${ans[i] === j ? 'bg-blue-50 border border-uos' : 'hover:bg-gray-50 border border-transparent'}`}><input type="radio" name={'q' + i} checked={ans[i] === j} onChange={() => setAns(a => ({ ...a, [i]: j }))} />{o}</label>)}
+        </div>
+      ))}
+      <div className="text-right"><button className="btn btn-green" onClick={() => { if (answered < quiz.questions.length && !window.confirm('Some questions are unanswered. Submit anyway?')) return; submit(); }}>Submit quiz</button></div>
+    </Card>
+  );
+}
+function QuizTeacher() {
+  const { quizzes, setQuizzes, attempts } = useApp();
+  const blank = () => ({ title: '', course: TEACHER_COURSES[0], minutes: 5, questions: [{ q: '', opts: ['', '', '', ''], ans: 0 }] });
+  const [form, setForm] = useState(blank());
+  const [err, setErr] = useState('');
+  const [show, setShow] = useState(null);
+  const setQ = (i, patch) => setForm(f => ({ ...f, questions: f.questions.map((q, j) => (j === i ? { ...q, ...patch } : q)) }));
+  const publish = () => {
+    if (!form.title.trim()) return setErr('Enter a quiz title.');
+    for (let i = 0; i < form.questions.length; i++) { const q = form.questions[i]; if (!q.q.trim() || q.opts.some(o => !o.trim())) return setErr(`Question ${i + 1}: fill the question and all four options.`); }
+    setQuizzes(x => [{ id: uid(), title: form.title.trim(), course: form.course, minutes: Number(form.minutes) || 5, questions: form.questions, ts: Date.now() }, ...x]);
+    setForm(blank()); setErr('');
+  };
+  return (
+    <>
+      <Card title="Create Online Quiz">
+        <div className="grid md:grid-cols-[1fr_1fr_120px] gap-x-3">
+          <div><label className="lbl !mt-0">Quiz title</label><input className="inp" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="e.g. SCD Quiz 2" /></div>
+          <div><label className="lbl !mt-0">Course</label><CourseSelect value={form.course} onChange={v => setForm({ ...form, course: v })} codes={TEACHER_COURSES} /></div>
+          <div><label className="lbl !mt-0">Minutes</label><input type="number" min="1" className="inp" value={form.minutes} onChange={e => setForm({ ...form, minutes: e.target.value })} /></div>
+        </div>
+        {form.questions.map((q, i) => (
+          <div key={i} className="border rounded p-3 mt-4 bg-gray-50">
+            <div className="flex justify-between items-center"><b className="text-sm">Question {i + 1}</b>{form.questions.length > 1 && <button className="text-red-600 text-xs" onClick={() => setForm(f => ({ ...f, questions: f.questions.filter((_, j) => j !== i) }))}>Remove</button>}</div>
+            <input className="inp mt-2" placeholder="Question text" value={q.q} onChange={e => setQ(i, { q: e.target.value })} />
+            {q.opts.map((o, j) => (
+              <div key={j} className="flex items-center gap-2 mt-2"><input type="radio" name={'ans' + i} checked={q.ans === j} onChange={() => setQ(i, { ans: j })} title="Correct answer" />
+                <input className="inp" placeholder={`Option ${String.fromCharCode(65 + j)}`} value={o} onChange={e => setQ(i, { opts: q.opts.map((x, k) => (k === j ? e.target.value : x)) })} /></div>
+            ))}
+            <div className="text-[11px] text-gray-500 mt-1">Select the radio button next to the correct option.</div>
+          </div>
+        ))}
+        {err && <div className="text-red-600 text-sm mt-3">{err}</div>}
+        <div className="flex justify-between mt-4 flex-wrap gap-2"><button className="btn btn-gray inline-flex items-center gap-1" onClick={() => setForm(f => ({ ...f, questions: [...f.questions, { q: '', opts: ['', '', '', ''], ans: 0 }] }))}><Icon n="plus" size={16} />Add question</button><button className="btn btn-green" onClick={publish}>Publish quiz</button></div>
+      </Card>
+      <Card title="Published Quizzes & Results">
+        {quizzes.length === 0 ? <Empty>No quizzes yet.</Empty> : quizzes.map(q => {
+          const at = attempts.filter(a => a.quizId === q.id);
+          return (
+            <div key={q.id} className="border rounded p-3 mb-3">
+              <div className="flex flex-wrap items-center gap-2 justify-between"><div><div className="font-bold">{q.title}</div><div className="text-xs text-gray-500">{cName(q.course)} · {q.questions.length} questions · {q.minutes} min · {at.length} attempt(s)</div></div>
+                <div className="flex gap-2"><button className="btn btn-gray !py-1" onClick={() => setShow(show === q.id ? null : q.id)}>{show === q.id ? 'Hide results' : 'View results'}</button><button className="btn btn-red !py-1" onClick={() => { if (window.confirm('Delete this quiz?')) setQuizzes(x => x.filter(y => y.id !== q.id)); }}>Delete</button></div></div>
+              {show === q.id && (at.length === 0 ? <div className="text-sm text-gray-500 mt-2">No attempts yet.</div> : <table className="tbl mt-2"><thead><tr><th>ROLL NO</th><th>NAME</th><th>SCORE</th><th>%</th><th>SUBMITTED</th></tr></thead><tbody>{at.map(a => <tr key={a.id}><td>{a.roll}</td><td>{a.name}</td><td>{a.score}/{a.total}</td><td>{Math.round(a.score * 100 / a.total)}%</td><td>{timeAgo(a.ts)}</td></tr>)}</tbody></table>)}
+            </div>
+          );
+        })}
+      </Card>
+    </>
+  );
+}
+
+/* ================================================================
+   PERFORMANCE REPORTS
+================================================================ */
+function ReportsStudent() {
+  const { sessions, marks, attempts, quizzes } = useApp();
+  const rows = COURSES.filter(c => c.sem === 'Sixth Semester').map(c => {
+    const a = attOf(sessions, STUDENT.roll, c.code), m = marks[c.code] && marks[c.code][STUDENT.roll];
+    return { c, a, r: m ? calc(m, c.cr) : null };
+  });
+  const done = rows.filter(r => r.r && !r.r.blank);
+  const sgpa = done.length ? (done.reduce((x, r) => x + r.r.qp, 0) / done.reduce((x, r) => x + r.c.cr, 0)).toFixed(2) : '--';
+  const avg = done.length ? Math.round(done.reduce((x, r) => x + r.r.obt, 0) / done.length) : 0;
+  const T = rows.reduce((x, r) => x + r.a.t, 0), P = rows.reduce((x, r) => x + r.a.p, 0), att = T ? Math.round(P * 100 / T) : 0;
+  const myAt = attempts.filter(a => a.roll === STUDENT.roll);
+  return (
+    <Card title="My Performance Report">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+        <Chip label="SGPA (6th SEM)" value={sgpa} sub="from published marks" tone="green" />
+        <Chip label="AVERAGE MARKS" value={avg + '%'} sub={`${done.length} courses`} tone="blue" />
+        <Chip label="ATTENDANCE" value={att + '%'} sub={att < 75 ? 'Below 75%' : 'Eligible for exams'} tone={att < 75 ? 'red' : 'green'} />
+        <Chip label="QUIZZES TAKEN" value={myAt.length} sub={`of ${quizzes.length}`} tone="amber" />
+      </div>
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>COURSE</th><th>ATTENDANCE</th><th>MARKS</th><th>GRADE</th></tr></thead>
+        <tbody>{rows.map(({ c, a, r }) => (
+          <tr key={c.code}><td><div className="font-medium">{c.name}</div><div className="text-xs text-gray-500">{c.code}</div></td>
+            <td className="min-w-[160px]"><div className="flex items-center gap-2">{a.t ? <><Pct v={a.pct} t={a.t} /><Bar v={a.pct} /></> : <span className="text-gray-400">No classes yet</span>}</div></td>
+            <td className="min-w-[160px]">{r && !r.blank ? <div className="flex items-center gap-2"><b>{r.obt}</b><Bar v={r.obt} color="#337ab7" /></div> : <span className="badge-proc">IN PROCESS</span>}</td>
+            <td className="font-bold">{r && !r.blank ? r.g : '--'}</td></tr>))}</tbody></table></div>
+      {myAt.length > 0 && <div className="mt-5"><div className="font-bold mb-2">Quiz scores</div>{myAt.map(a => { const qz = quizzes.find(q => q.id === a.quizId); return <div key={a.id} className="text-sm py-1 border-b">{qz ? qz.title : 'Quiz'}: <b>{a.score}/{a.total}</b></div>; })}</div>}
+    </Card>
+  );
+}
+function ReportsTeacher() {
+  const { sessions, marks } = useApp();
+  const [code, setCode] = useState(TEACHER_COURSES[0]);
+  const course = cOf(code);
+  const rows = ROSTER.map(s => { const a = attOf(sessions, s.roll, code); const m = marks[code] && marks[code][s.roll]; const r = m ? calc(m, course.cr) : null; return { s, a, r }; });
+  const withMarks = rows.filter(x => x.r && !x.r.blank);
+  const risk = x => (x.a.t > 0 && x.a.pct < 75) || (x.r && !x.r.blank && !x.r.pass);
+  const avgAtt = Math.round(rows.reduce((x, r) => x + r.a.pct, 0) / rows.length);
+  const csv = () => downloadBlob(`report_${code}.csv`, ['Roll No,Name,Attendance %,Total Marks,Grade,Status', ...rows.map(x => [x.s.roll, x.s.name, x.a.pct, x.r && !x.r.blank ? x.r.obt : '', x.r && !x.r.blank ? x.r.g : '', risk(x) ? 'At risk' : 'OK'].join(','))].join('\n'), 'text/csv');
+  return (
+    <Card title="Student Performance Report" right={<div className="flex gap-2 no-print"><button className="btn btn-gray" onClick={csv}>Export CSV</button><button className="btn" onClick={() => window.print()}>Print</button></div>}>
+      <label className="lbl !mt-0">Course</label><CourseSelect value={code} onChange={setCode} codes={TEACHER_COURSES} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 my-4">
+        <Chip label="AVG ATTENDANCE" value={avgAtt + '%'} sub="class average" tone={avgAtt < 75 ? 'red' : 'green'} />
+        <Chip label="AVG MARKS" value={withMarks.length ? Math.round(withMarks.reduce((x, r) => x + r.r.obt, 0) / withMarks.length) : '--'} sub={`${withMarks.length} graded`} tone="blue" />
+        <Chip label="AT-RISK" value={rows.filter(risk).length} sub="low attendance or failing" tone="red" />
+        <Chip label="PASSING" value={withMarks.length ? Math.round(withMarks.filter(r => r.r.pass).length * 100 / withMarks.length) + '%' : '--'} sub="of graded students" tone="amber" />
+      </div>
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>ROLL NO</th><th>NAME</th><th>ATTENDANCE</th><th>MARKS</th><th>GRADE</th><th>STATUS</th></tr></thead>
+        <tbody>{rows.map(x => (
+          <tr key={x.s.roll}><td>{x.s.roll}</td><td className="font-medium">{x.s.name}</td>
+            <td className="min-w-[150px]"><div className="flex items-center gap-2">{x.a.t ? <><Pct v={x.a.pct} t={x.a.t} /><Bar v={x.a.pct} /></> : <span className="text-gray-400">-</span>}</div></td>
+            <td className="min-w-[130px]">{x.r && !x.r.blank ? <div className="flex items-center gap-2"><b>{x.r.obt}</b><Bar v={x.r.obt} color="#337ab7" /></div> : <span className="text-gray-400">Not entered</span>}</td>
+            <td className="font-bold">{x.r && !x.r.blank ? x.r.g : '-'}</td>
+            <td>{risk(x) ? <span className="text-xs bg-red-100 text-red-700 font-bold rounded px-2 py-0.5">At risk</span> : <span className="text-xs bg-green-100 text-green-700 font-bold rounded px-2 py-0.5">On track</span>}</td></tr>))}</tbody></table></div>
+    </Card>
+  );
+}
+
+/* ================================================================
+   OTHER EXISTING PAGES
+================================================================ */
+function Profile() {
+  const { role } = useApp();
+  const T = role === 'teacher';
+  const rows = T ? [['Name', TEACHER_USER.name], ['Designation', 'Lecturer'], ['Department', 'Software Engineering (FET)'], ['Courses', TEACHER_COURSES.map(cName).join(', ')], ['University', 'University of Sindh, Jamshoro']]
+    : [['Name', STUDENT.name], ['Roll No', STUDENT.roll], ['Department', STUDENT.dept], ['Program', STUDENT.program], ['Batch', STUDENT.batch], ['Current Semester', 'Sixth Semester'], ['University', 'University of Sindh, Jamshoro']];
+  return <Card title="My Profile"><table className="w-full text-[14px]"><tbody>{rows.map(([a, b]) => <tr key={a} className="bg-[#d9edf7] border-b-2 border-white"><td className="px-3 py-2.5 w-1/3">{a}</td><td className="px-3 py-2.5 font-bold">{b}</td></tr>)}</tbody></table></Card>;
+}
+function Eportal() {
+  const { go } = useApp();
+  return (
+    <Card title="ITSC Eportal Dashboard">
+      <p className="mb-4 text-gray-700">Welcome to the ITSC Eportal, {STUDENT.name}. Your academic, financial and library services are available from here.</p>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {[['results', 'Result Notice Board'], ['attendance', 'Attendance'], ['admission', 'Fee Challans'], ['courses', 'Examination Form'], ['scholarship', 'Scholarships'], ['library', 'Koha Library']].map(([p, t]) => <button key={p} onClick={() => go(p)} className="border rounded px-4 py-4 text-left text-[#0b6bf0] font-bold hover:bg-blue-50">{t}</button>)}
+      </div>
+    </Card>
+  );
+}
+function Program() {
+  const [sel, setSel] = useLS('program', 'BS (SOFTWARE ENGINEERING)');
+  const [ok, setOk] = useState(false);
+  const progs = ['BS (SOFTWARE ENGINEERING)', 'BS (COMPUTER SCIENCE)', 'BS (INFORMATION TECHNOLOGY)'];
+  return (
+    <Card title="Choose Program">
+      <p className="text-sm text-gray-600 mb-3">Your registered program is <b>{STUDENT.program}</b> (Roll No {STUDENT.roll}). Program changes require approval from the department.</p>
+      {progs.map(p => <label key={p} className="flex items-center gap-2 border rounded px-4 py-3 mb-2 cursor-pointer"><input type="radio" checked={sel === p} onChange={() => { setSel(p); setOk(false); }} />{p}{p === STUDENT.program && <span className="text-[10px] bg-green-500 text-white rounded px-1.5 ml-2">CURRENT</span>}</label>)}
+      <button className="btn mt-2" onClick={() => setOk(true)}>Save selection</button>
+      {ok && <div className="text-sm mt-3 text-green-700">{sel === STUDENT.program ? 'Your current program is confirmed.' : 'Program change request submitted to the department for approval.'}</div>}
+    </Card>
+  );
+}
+function VirtualClass() {
+  const { role, uploads, go } = useApp();
+  const [room, setRoom] = useState(null);
+  const list = role === 'teacher' ? TEACHER_COURSES.map(cOf) : COURSES.filter(c => c.sem === 'Sixth Semester');
+  return (
+    <Card title="Virtual Class Room">
+      <div className="grid md:grid-cols-2 gap-3">
+        {list.map(c => (
+          <div key={c.code} className="border rounded p-4">
+            <div className="font-bold">{c.name}</div><div className="text-xs text-gray-500">{c.code} · {c.sem} · {TEACHERS.find(t => t.id === c.t).name}</div>
+            <div className="text-sm mt-2">{uploads.filter(u => u.course === c.code).length} material(s) / assignment(s)</div>
+            <div className="flex gap-2 mt-3"><button className="btn !py-1" onClick={() => setRoom(c)}>{role === 'teacher' ? 'Start class' : 'Join class'}</button><button className="btn btn-gray !py-1" onClick={() => go('downloads')}>Materials</button></div>
+          </div>
+        ))}
+      </div>
+      {room && (
+        <Modal title={room.name} onClose={() => setRoom(null)}>
+          <p className="text-sm">Class room is ready. Share this link with students:</p>
+          <div className="flex gap-2 mt-3"><input readOnly className="inp" value={`https://meet.usindh.edu.pk/${room.code.toLowerCase()}`} /><button className="btn" onClick={() => { try { navigator.clipboard.writeText(`https://meet.usindh.edu.pk/${room.code.toLowerCase()}`); } catch (e) {} }}>Copy</button></div>
+          <p className="text-xs text-gray-500 mt-3">Demo room: no real video call is started in this prototype.</p>
+        </Modal>
+      )}
+    </Card>
+  );
+}
+function CourseSelection() {
+  const { examForm, setExamForm } = useApp();
+  const six = COURSES.filter(c => c.sem === 'Sixth Semester');
+  const [sel, setSel] = useState(examForm ? examForm.courses : six.map(c => c.code));
+  const credits = six.filter(c => sel.includes(c.code)).reduce((x, c) => x + c.cr, 0);
+  return (
+    <Card title="Course Selection / Examination Form">
+      {examForm && <div className="bg-green-50 border border-green-300 text-green-800 rounded px-4 py-3 mb-4 text-sm">Examination form submitted on {fmtLong(examForm.ts)} for {examForm.courses.length} course(s). You can update it below.</div>}
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th></th><th>COURSE NO</th><th>SUBJECTS</th><th>CREDIT HOURS</th></tr></thead>
+        <tbody>{six.map(c => <tr key={c.code}><td><input type="checkbox" checked={sel.includes(c.code)} onChange={() => setSel(s => (s.includes(c.code) ? s.filter(x => x !== c.code) : [...s, c.code]))} /></td><td>{c.code}</td><td>{c.name}</td><td>{c.cr}</td></tr>)}
+          <tr><td colSpan={3} className="font-bold">TOTAL CREDIT HOURS</td><td className="font-bold">{credits}</td></tr></tbody></table></div>
+      <div className="flex gap-2 mt-4"><button className="btn btn-green" disabled={!sel.length} onClick={() => setExamForm({ courses: sel, ts: Date.now() })}>Submit examination form</button><button className="btn btn-gray" onClick={() => window.print()}>Print form</button></div>
+    </Card>
+  );
+}
+function Admission() {
+  const { fee, setFee } = useApp();
+  const d = daysBetween(isoDate(), fee.due);
+  return (
+    <Card title="Paid/ Unpaid Challans">
+      <p className="text-red-600 text-[14px] mb-4">If you have paid hostel challan please wait for 2 working days to get <b className="text-green-700">PAID</b> status, yet the fee is not marked as paid ask the concered provost for update the fee ledger of your payment date.</p>
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>PAYMENT</th><th>CHALLAN TITLE</th><th>PART</th><th>SEMESTER</th><th>DUE DATE</th><th>DOWNLOAD CHALLAN</th><th>DOWNLOAD ADMISSION FORM</th></tr></thead>
+        <tbody><tr>
+          <td className={fee.paid ? 'text-green-700 font-bold' : 'text-red-600 font-bold'}>{fee.paid ? 'Paid' : 'Unpaid'}</td>
+          <td className="font-bold">Admission to Next Higher Study Challan</td><td>FOURTH YEAR</td><td>EIGHTH SEMESTER</td><td>{dmy(fee.due)}</td>
+          <td>{fee.paid ? <span className="text-green-700">Fee received</span> : d < 0 ? <b className="text-red-600 text-[15px]">Sorry your challan is expired.</b> : <button className="text-[#0b6bf0] underline" onClick={() => downloadBlob('Fee_Challan.txt', `University of Sindh Fee Challan\nAdmission to Next Higher Study Challan\nEIGHTH SEMESTER\nRoll No: ${STUDENT.roll}\nDue: ${dmy(fee.due)}\n`)}>Download Challan</button>}</td>
+          <td><button className="text-[#0b6bf0]" onClick={() => downloadBlob('Admission_Form.txt', `Admission Form\n${STUDENT.name} · ${STUDENT.roll}\n${STUDENT.program}\nEIGHTH SEMESTER\n`)}>Download Admission Form</button></td></tr></tbody></table></div>
+      <div className="flex flex-wrap gap-2 mt-5">
+        {!fee.paid && <button className="btn" onClick={() => setFee({ due: addDays(7), paid: false })}>Generate new challan (7 days)</button>}
+        {!fee.paid && <button className="btn btn-green" onClick={() => setFee({ ...fee, paid: true })}>Mark as paid (demo)</button>}
+        {fee.paid && <button className="btn btn-gray" onClick={() => setFee({ due: '2026-10-09', paid: false })}>Reset fee status</button>}
+      </div>
+    </Card>
+  );
+}
+const SCHOLARSHIPS = [
+  ['HEC-NEED BASED', 'SESSION 2019', '27-08-2019', '23-02-2021'], ['NEST SCHOLARSHIP', 'NEST SCHOLARSHIP 2020', '19-02-2020', '06-03-2020'],
+  ['NEED-CUM MERIT', 'NEED-CUM MERIT SCHOLARSHIP 2020', '06-03-2020', '30-06-2020'], ['ENDOWWMENT SCHOLARSHIP', 'Sindh Endowment Scholarship', '30-11-2020', '08-12-2020'],
+  ['NEED-CUM MERIT', 'NEED CUM MERIT PHASE II', '21-01-2021', '24-01-2021'], ['HEC-NEED BASED', 'SESSION 2020', '18-01-2021', '11-10-2021'],
+  ['SINDH HEC SCHOLARSHIP', 'SINDH HEC SCHOLARSHIP FOR B.E/B.S/PHARM-D/LLB STUDENTS', '14-05-2021', '24-05-2021'], ['NEST SCHOLARSHIP', 'NEST SCHOLARSHIP 2021', '27-05-2021', '02-01-2022'],
+  ['NEED-CUM MERIT', 'NEED-CUM MERIT SESSION 2021-22', '02-12-2021', '02-01-2022'], ['NEST SCHOLARSHIP', 'NEST SCHOLARSHIP-2022', '28-11-2022', '23-12-2022'],
+  ['NEED-CUM MERIT', 'NEED CUM MERIT 2023', '04-04-2023', '04-05-2023'], ['NEST SCHOLARSHIP', 'NEST 2023', '29-08-2023', '15-09-2023'],
+  ['PROFESSOR AMENA KHAMISANI SCHOLARSHIP', 'Professor Amena Khamisani Scholarship', '13-09-2023', '11-09-2024'], ['HEC-NEED BASED', 'NEST SCHOLARSHIP 2024', '16-04-2024', '26-04-2024'],
+  ['NEST SCHOLARSHIP', 'NEST SCHOLARSHIP 2024', '16-04-2024', '26-04-2024'], ['NEED-CUM MERIT', 'NEED CUM MERIT 2024', '01-06-2024', '07-06-2024'],
+  ['NEST SCHOLARSHIP', 'PEEF Scholarship 2024/2', '18-09-2024', '23-09-2024'], ['NEST SCHOLARSHIP', 'PEEF-AI', '15-10-2024', '25-10-2024'],
+  ['NEED-CUM MERIT', 'NEED CUM MERIT 2025', '03-02-2025', '21-02-2025'], ['NEED-CUM MERIT', 'NEED CUM MERIT 2025-26', '17-09-2025', '22-04-2026'],
+];
+function Scholarship() {
+  return (
+    <Card title="Scholarship Announcements">
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>SCHOLARSHIP</th><th>SCHOLARSHIP TITLE</th><th>START DATE</th><th>END DATE</th><th>DOWNLOAD</th><th>APPLY NOW</th></tr></thead>
+        <tbody>{SCHOLARSHIPS.map((r, i) => (
+          <tr key={i}><td>{i + 1}</td><td>{r[0]}</td><td>{r[1]}</td><td className="whitespace-nowrap">{r[2]}</td><td className="whitespace-nowrap">{r[3]}</td><td></td>
+            <td className="text-red-600 text-[12px] min-w-[260px]">✖ {i < 10 ? 'You are not eligible for this scholarship because your batch year does not match the announcement year, or your current academic part records are missing.' : 'Application form submission is over due date'}</td></tr>))}</tbody></table></div>
+    </Card>
+  );
+}
+function Evaluation() {
+  const [ev, setEv] = useLS('evals', {});
+  const [ok, setOk] = useState(false);
+  const six = COURSES.filter(c => c.sem === 'Sixth Semester');
+  return (
+    <Card title="Course Evaluation">
+      <p className="text-sm text-gray-600 mb-3">Rate each course and its teacher from 1 (poor) to 5 (excellent). Your evaluation is anonymous.</p>
+      {six.map(c => (
+        <div key={c.code} className="border rounded p-3 mb-3"><div className="font-medium">{c.name}</div><div className="text-xs text-gray-500 mb-2">{TEACHERS.find(t => t.id === c.t).name}</div>
+          <div className="flex gap-1">{[1, 2, 3, 4, 5].map(n => <button key={n} onClick={() => { setEv({ ...ev, [c.code]: { ...(ev[c.code] || {}), r: n } }); setOk(false); }} className={(ev[c.code] && ev[c.code].r >= n) ? 'text-amber-500' : 'text-gray-300'} aria-label={n + ' stars'}><Icon n="star" size={28} sw={1.5} /></button>)}</div>
+          <input className="inp mt-2" placeholder="Comment (optional)" value={(ev[c.code] && ev[c.code].c) || ''} onChange={e => setEv({ ...ev, [c.code]: { ...(ev[c.code] || {}), c: e.target.value } })} /></div>
+      ))}
+      <button className="btn btn-green" onClick={() => setOk(true)}>Submit evaluation</button>{ok && <span className="ml-3 text-green-700 text-sm">Thank you! Your evaluation has been saved.</span>}
+    </Card>
+  );
+}
+function HecSurvey() {
+  const [a, setA] = useLS('hec', null);
+  const [f, setF] = useState({ q1: '', q2: '', q3: '' });
+  return (
+    <Card title="HEC Survey Form: Youth Experiences, Opinions, and Future Outlook">
+      <p className="text-red-600 font-bold mb-4">This anonymous survey collects your views as a university student in Pakistan. Your responses are completely confidential and used only for research.</p>
+      {a ? <div className="bg-green-50 border border-green-300 text-green-800 rounded p-4">Survey submitted on {fmtLong(a.ts)}. Thank you for your response.</div> : (
+        <>
+          <label className="lbl !mt-0">How would you rate your overall university experience?</label><select className="inp" value={f.q1} onChange={e => setF({ ...f, q1: e.target.value })}><option value="">Select…</option>{['Very poor', 'Poor', 'Average', 'Good', 'Excellent'].map(o => <option key={o}>{o}</option>)}</select>
+          <label className="lbl">How confident are you about your career after graduation?</label><select className="inp" value={f.q2} onChange={e => setF({ ...f, q2: e.target.value })}><option value="">Select…</option>{['Not confident', 'Somewhat confident', 'Confident', 'Very confident'].map(o => <option key={o}>{o}</option>)}</select>
+          <label className="lbl">What would improve student life at your university?</label><textarea className="inp" rows={3} value={f.q3} onChange={e => setF({ ...f, q3: e.target.value })} />
+          <button className="btn mt-4" disabled={!f.q1 || !f.q2} onClick={() => setA({ ...f, ts: Date.now() })}>Submit survey</button>
+        </>
+      )}
+    </Card>
+  );
+}
+function PickDrop() {
+  const rows = [['Hyderabad (Latifabad Unit 7)', '06:45 AM', '04:15 PM', 'Bus 01'], ['Hyderabad (Hirabad Chowk)', '07:00 AM', '04:30 PM', 'Bus 02'], ['Kotri Bus Stop', '07:20 AM', '04:50 PM', 'Bus 03'], ['Jamshoro Railway Station', '07:45 AM', '05:00 PM', 'Bus 04'], ['Sehwan Road, Manjhand', '07:30 AM', '04:45 PM', 'Bus 05']];
+  return <Card title="Points Pick/Drop Locations"><div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>POINT</th><th>PICK-UP</th><th>DROP</th><th>BUS</th></tr></thead><tbody>{rows.map((r, i) => <tr key={i}><td>{i + 1}</td>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table></div></Card>;
+}
+function Library() {
+  const [q, setQ] = useState('');
+  const [res, setRes] = useLS('reserved', []);
+  const books = [['Software Engineering', 'Ian Sommerville', 'Available'], ['Clean Code', 'Robert C. Martin', 'Available'], ['Operating System Concepts', 'Silberschatz, Galvin', 'Issued'], ['Design Patterns', 'Gamma et al.', 'Available'], ['Code Complete', 'Steve McConnell', 'Available'], ['Computer Networks', 'Andrew Tanenbaum', 'Issued'], ['Human-Computer Interaction', 'Alan Dix', 'Available'], ['Cryptography and Network Security', 'William Stallings', 'Available'], ["Software Engineering: A Practitioner's Approach", 'Roger Pressman', 'Available']];
+  const list = books.filter(b => (b[0] + b[1]).toLowerCase().includes(q.toLowerCase()));
+  return (
+    <Card title="Koha Library">
+      <input className="inp mb-3" placeholder="Search by title or author" value={q} onChange={e => setQ(e.target.value)} />
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>TITLE</th><th>AUTHOR</th><th>STATUS</th><th></th></tr></thead>
+        <tbody>{list.map(b => <tr key={b[0]}><td className="font-medium">{b[0]}</td><td>{b[1]}</td><td className={b[2] === 'Available' ? 'text-green-700 font-bold' : 'text-red-600 font-bold'}>{b[2]}</td>
+          <td><button className={`btn !py-1 ${res.includes(b[0]) ? 'btn-gray' : ''}`} onClick={() => setRes(r => (r.includes(b[0]) ? r.filter(x => x !== b[0]) : [...r, b[0]]))}>{res.includes(b[0]) ? 'Cancel reservation' : 'Reserve'}</button></td></tr>)}</tbody></table></div>
+      {list.length === 0 && <Empty>No books match your search.</Empty>}
+    </Card>
+  );
+}
+function Hostel() {
+  const [req, setReq] = useLS('hostelreq', null);
+  const [type, setType] = useState('Double sharing');
+  return (
+    <Card title="Hostel: Form / Paid Fees History">
+      <div className="font-bold mb-2">Paid fees history</div>
+      <div className="overflow-x-auto"><table className="tbl"><thead><tr><th>S.NO</th><th>CHALLAN</th><th>AMOUNT</th><th>PAID ON</th></tr></thead><tbody><tr><td colSpan={4} className="text-center text-gray-500 py-6">No hostel payments found for {STUDENT.roll}.</td></tr></tbody></table></div>
+      <div className="font-bold mt-5 mb-2">Hostel admission form</div>
+      {req ? <div className="bg-green-50 border border-green-300 text-green-800 rounded p-4 text-sm">Request for “{req.type}” submitted on {fmtLong(req.ts)}. The provost office will contact you.</div> : (
+        <><label className="lbl !mt-0">Room type</label><select className="inp max-w-sm" value={type} onChange={e => setType(e.target.value)}><option>Single</option><option>Double sharing</option><option>Triple sharing</option></select>
+          <button className="btn mt-3" onClick={() => setReq({ type, ts: Date.now() })}>Submit hostel form</button></>
+      )}
+    </Card>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
